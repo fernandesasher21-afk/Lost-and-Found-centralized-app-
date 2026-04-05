@@ -1,0 +1,1 @@
+ALTER TABLE public."Found_Item" DROP CONSTRAINT "Found_Item_found_id_fkey";
