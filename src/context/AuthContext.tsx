@@ -53,6 +53,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Skip setting user during password recovery to avoid redirecting
+        // away from the reset password form
+        if (event === "PASSWORD_RECOVERY") {
+          setLoading(false);
+          return;
+        }
         if (session?.user) {
           // Use setTimeout to avoid deadlock with Supabase auth
           setTimeout(() => fetchProfile(session.user), 0);

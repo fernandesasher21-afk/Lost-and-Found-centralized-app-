@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, ArrowLeft, Send, KeyRound, Eye, EyeOff, Check, ArrowRight } from "lucide-react";
@@ -23,21 +23,23 @@ const ForgotPassword = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const isRecoveryMode = useRef(false);
 
-  // Check if we have a token from the reset link
+  // Listen specifically for the PASSWORD_RECOVERY event from Supabase
+  // This fires when a user clicks the reset link from their email
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      // If user clicked reset link from email, they'll have a session
-      if (session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        isRecoveryMode.current = true;
         setStep("reset");
       }
-    };
-    checkSession();
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
+  // Only redirect to dashboard if NOT in recovery mode
   useEffect(() => {
-    if (user) {
+    if (user && !isRecoveryMode.current) {
       navigate(user.role === "admin" || user.role === "staff" ? "/admin" : "/dashboard");
     }
   }, [user, navigate]);
