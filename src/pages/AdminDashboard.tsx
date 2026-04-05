@@ -48,6 +48,7 @@ interface LostItem {
   user_id: string | null;
   image_path: string | null;
   lost_embedding: string | null;
+  text_embedding?: string | null;
   ai_description: string | null;
   reporter_name?: string | null;
 }
@@ -63,6 +64,7 @@ interface FoundItem {
   description: string | null;
   image_path: string | null;
   found_embedding: string | null;
+  text_embedding?: string | null;
   ai_description: string | null;
 }
 
@@ -281,10 +283,10 @@ const AdminDashboard = () => {
     setMatchingLoading(true);
     setSelectedFoundItem(foundItem);
     const results: MatchResult[] = [];
-    const PHOTO_THRESHOLD = 0.5;
     let hasGoodPhotoMatch = false;
+    let hasGoodTextAiMatch = false;
 
-    // STEP 1: Try photo/embedding comparison first
+    // STEP 1: Try photo/embedding comparison first (Primary Image Match)
     if (foundItem.found_embedding) {
       const { data: embeddingMatches } = await supabase.rpc("match_found_to_lost", {
         _embedding: foundItem.found_embedding,
@@ -294,7 +296,7 @@ const AdminDashboard = () => {
 
       if (embeddingMatches && embeddingMatches.length > 0) {
         for (const m of embeddingMatches) {
-          if (m.similarity >= PHOTO_THRESHOLD) {
+          if (m.similarity >= 0.80) { // Keep > 80%
             hasGoodPhotoMatch = true;
             const lostItem = lostItems.find(l => l.lost_id === m.lost_id) || {
               lost_id: m.lost_id,
@@ -308,6 +310,7 @@ const AdminDashboard = () => {
               image_path: m.image_path,
               user_id: m.user_id,
               lost_embedding: null,
+              text_embedding: null,
               ai_description: null,
               reporter_name: null,
             };
@@ -322,14 +325,53 @@ const AdminDashboard = () => {
       }
     }
 
-    // STEP 2: Only fall back to text-based matching if no good photo matches
-    if (!hasGoodPhotoMatch) {
+    // STEP 2: Try LLM Text matching first (Primary Text Match) using text_embedding
+    if (!hasGoodPhotoMatch && foundItem.text_embedding) {
+       const { data: textMatches } = await supabase.rpc("match_found_to_lost_text", {
+         _embedding: foundItem.text_embedding,
+         _subcategory: foundItem.subcategory || foundItem.category || "",
+         _limit: 10,
+       });
+
+       if (textMatches && textMatches.length > 0) {
+         for (const m of textMatches) {
+           if (m.similarity >= 0.40) { // Keep > 40% matching descriptions
+             hasGoodTextAiMatch = true;
+             // Don't duplicate matches
+             if (results.find(r => r.lostItem.lost_id === m.lost_id)) continue;
+             
+             const lostItem = lostItems.find(l => l.lost_id === m.lost_id) || {
+               lost_id: m.lost_id,
+               name: m.name,
+               category: m.category, // etc
+               subcategory: m.subcategory,
+               status: m.status,
+               location: m.location,
+               date_lost: m.date_lost,
+               description: m.description,
+               image_path: m.image_path,
+               user_id: m.user_id,
+             };
+             
+             results.push({
+               lostItem: lostItem as LostItem,
+               similarity: m.similarity,
+               reasons: ["AI Text match"],
+               matchType: "text",
+             });
+           }
+         }
+       }
+    }
+
+    // STEP 3: Only fall back to local rule-based text matching if no good photo AND no good AI text matches
+    if (!hasGoodPhotoMatch && !hasGoodTextAiMatch) {
       for (const lost of lostItems) {
         if (lost.status !== "Lost") continue;
         if (results.find(r => r.lostItem.lost_id === lost.lost_id)) continue;
         const match = calculateMatch(lost, foundItem);
         if (match.similarity >= 0.40) {
-          results.push(match);
+          results.push({...match, matchType: "text"});
         }
       }
     }

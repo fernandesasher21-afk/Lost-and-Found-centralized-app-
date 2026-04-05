@@ -17,6 +17,9 @@ serve(async (req) => {
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured");
 
+    const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
+    if (!HUGGINGFACE_API_KEY) throw new Error("HUGGINGFACE_API_KEY not configured");
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -30,130 +33,23 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await anonClient.auth.getUser();
     if (authError || !user) throw new Error("Unauthorized");
 
-    const { image_base64, item_type, item_id, category, subcategory, location, date_value } = await req.json();
+    const { image_base64, item_type, item_id, category, subcategory, location, date_value, original_description } = await req.json();
 
     if (!image_base64 || !item_type || !item_id) {
       throw new Error("Missing required fields: image_base64, item_type, item_id");
     }
 
-    // Step 1: Use Lovable AI (Gemini with vision) to describe the image
-    console.log("Generating image description via Lovable AI...");
-    const imageUrl = image_base64.startsWith("data:") ? image_base64 : `data:image/jpeg;base64,${image_base64}`;
+    const isImageUpload = image_base64 && image_base64.length > 100;
+    let clipEmbeddingStr = null;
+    let textEmbeddingStr = null;
+    let imageDescription = original_description || "";
 
-    const visionRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert at describing objects for a lost and found system. Describe the item in the image in detail: color, brand, size, shape, material, distinctive marks, condition. Be specific and factual. Keep it under 200 words.",
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Describe this item in detail for matching purposes:" },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
-          },
-        ],
-      }),
-    });
+    if (isImageUpload) {
+      // Step 1: Use Lovable AI (Gemini with vision) to describe the image
+      console.log("Generating image description via Lovable AI...");
+      const imageUrl = image_base64.startsWith("data:") ? image_base64 : `data:image/jpeg;base64,${image_base64}`;
 
-    if (!visionRes.ok) {
-      const err = await visionRes.text();
-      console.error("Lovable AI Vision error:", visionRes.status, err);
-      if (visionRes.status === 429) throw new Error("Rate limited, please try again later");
-      if (visionRes.status === 402) throw new Error("AI credits exhausted, please add funds");
-      throw new Error(`Vision API failed: ${visionRes.status}`);
-    }
-
-    const visionData = await visionRes.json();
-    const imageDescription = visionData.choices?.[0]?.message?.content || "";
-    console.log("AI description:", imageDescription.substring(0, 100));
-
-    // Step 2: Generate CLIP-style text embedding from the AI description using OpenAI
-    console.log("Generating embedding from AI description...");
-    const embeddingText = `${category || ""} ${subcategory || ""} ${imageDescription}`.trim();
-
-    const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "text-embedding-3-small",
-        input: embeddingText,
-      }),
-    });
-
-    if (!embeddingRes.ok) {
-      const embErr = await embeddingRes.text();
-      console.error("OpenAI embedding error:", embeddingRes.status, embErr);
-      throw new Error(`Embedding API failed: ${embeddingRes.status}`);
-    }
-
-    const embeddingData = await embeddingRes.json();
-    const embedding = embeddingData.data?.[0]?.embedding;
-    if (!embedding) throw new Error("No embedding returned from OpenAI");
-    console.log("Embedding generated, dimensions:", embedding.length);
-
-    // Step 3: Store AI description + embedding on the item
-    const table = item_type === "lost" ? "Lost_Item" : "Found_Item";
-    const idCol = item_type === "lost" ? "lost_id" : "found_id";
-    const embeddingCol = item_type === "lost" ? "lost_embedding" : "found_embedding";
-
-    // Format embedding as pgvector string
-    const embeddingStr = `[${embedding.join(",")}]`;
-
-    const { error: updateError } = await supabase
-      .from(table)
-      .update({
-        ai_description: imageDescription,
-        subcategory: subcategory || null,
-        [embeddingCol]: embeddingStr,
-      })
-      .eq(idCol, item_id);
-
-    if (updateError) {
-      console.error("Update error:", updateError);
-      throw new Error(`Failed to store AI description/embedding: ${updateError.message}`);
-    }
-    console.log("AI description + embedding stored for", table, item_id);
-
-    // Step 4: Find potential matches using AI comparison
-    const oppositeTable = item_type === "lost" ? "Found_Item" : "Lost_Item";
-    const oppositeStatus = item_type === "lost" ? "Found" : "Lost";
-
-    const { data: candidates } = await supabase
-      .from(oppositeTable)
-      .select("*")
-      .eq("status", oppositeStatus)
-      .limit(20);
-
-    const scoredMatches: any[] = [];
-
-    if (candidates && candidates.length > 0) {
-      const itemSummary = `Category: ${category || "unknown"}, Subcategory: ${subcategory || "unknown"}, Location: ${location || "unknown"}, Date: ${date_value || "unknown"}, AI Description: ${imageDescription}`;
-
-      const candidateDescriptions = candidates
-        .map((c: any, i: number) => {
-          const id = item_type === "lost" ? c.found_id : c.lost_id;
-          const desc = c.ai_description || c.description || "No description";
-          const dateField = item_type === "lost" ? c.date_found : c.date_lost;
-          return `Item ${i}: id=${id}, category=${c.category || "?"}, subcategory=${c.subcategory || "?"}, location=${c.location || "?"}, date=${dateField || "?"}, description=${desc}`;
-        })
-        .join("\n");
-
-      console.log("Comparing against", candidates.length, "candidates via AI...");
-
-      const matchRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const visionRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
@@ -165,98 +61,159 @@ serve(async (req) => {
             {
               role: "system",
               content:
-                "You are a matching engine for a lost and found system. Compare the reference item against each candidate and return similarity scores. Consider: visual description similarity, category/subcategory match, location proximity, and date proximity. Return ONLY valid JSON.",
+                "You are an expert at describing objects for a lost and found system. Describe the item in the image in detail: color, brand, size, shape, material, distinctive marks, condition. Be specific and factual. Keep it under 200 words.",
             },
             {
               role: "user",
-              content: `Reference item:\n${itemSummary}\n\nCandidates:\n${candidateDescriptions}\n\nReturn a JSON array of objects with "index" (number) and "score" (0.0 to 1.0) for candidates with score >= 0.4. Only include matches above threshold.`,
+              content: [
+                { type: "text", text: "Describe this item in detail for matching purposes:" },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
             },
           ],
-          tools: [
-            {
-              type: "function",
-              function: {
-                name: "report_matches",
-                description: "Report similarity scores for matching items",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    matches: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          index: { type: "number", description: "Candidate index" },
-                          score: { type: "number", description: "Similarity score 0-1" },
-                          reason: { type: "string", description: "Brief reason for the score" },
-                        },
-                        required: ["index", "score", "reason"],
-                        additionalProperties: false,
-                      },
-                    },
-                  },
-                  required: ["matches"],
-                  additionalProperties: false,
-                },
-              },
-            },
-          ],
-          tool_choice: { type: "function", function: { name: "report_matches" } },
         }),
       });
 
-      if (matchRes.ok) {
-        const matchData = await matchRes.json();
-        const toolCall = matchData.choices?.[0]?.message?.tool_calls?.[0];
-        if (toolCall) {
-          try {
-            const parsed = JSON.parse(toolCall.function.arguments);
-            const aiMatches = parsed.matches || [];
-
-            for (const m of aiMatches) {
-              const candidate = candidates[m.index];
-              if (!candidate || m.score < 0.4) continue;
-
-              const candidateId = item_type === "lost" ? candidate.found_id : candidate.lost_id;
-
-              let finalScore = m.score;
-              if (candidate.subcategory && subcategory && candidate.subcategory.toLowerCase() === subcategory.toLowerCase()) {
-                finalScore = Math.min(1.0, finalScore + 0.1);
-              }
-              if (candidate.location && location) {
-                const cLoc = candidate.location.toLowerCase();
-                const iLoc = location.toLowerCase();
-                if (cLoc.includes(iLoc) || iLoc.includes(cLoc)) {
-                  finalScore = Math.min(1.0, finalScore + 0.05);
-                }
-              }
-
-              scoredMatches.push({
-                ...(item_type === "lost"
-                  ? { found_id: candidateId }
-                  : { lost_id: candidateId, user_id: candidate.user_id }),
-                name: candidate.name,
-                category: candidate.category,
-                subcategory: candidate.subcategory,
-                location: candidate.location,
-                description: candidate.description,
-                similarity: finalScore,
-                ai_reason: m.reason,
-              });
-            }
-          } catch (parseErr) {
-            console.error("Failed to parse AI match results:", parseErr);
-          }
+      if (visionRes.ok) {
+        const visionData = await visionRes.json();
+        const generatedDesc = visionData.choices?.[0]?.message?.content || "";
+        if (generatedDesc) {
+           imageDescription = `${original_description ? original_description + ' | ' : ''} AI Vision: ${generatedDesc}`;
         }
-      } else {
-        console.error("AI matching failed:", matchRes.status, await matchRes.text());
+        console.log("AI description:", imageDescription.substring(0, 100));
       }
+
+      // Step 2: Generate CLIP Visual Embedding from HuggingFace
+      console.log("Generating CLIP visual embedding via HF...");
+      try {
+        const cleanBase64 = image_base64.includes(",") ? image_base64.split(",")[1] : image_base64;
+        const binString = atob(cleanBase64);
+        const len = binString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binString.charCodeAt(i);
+        }
+
+        const hfRes = await fetch("https://api-inference.huggingface.co/pipeline/feature-extraction/openai/clip-vit-base-patch32", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${HUGGINGFACE_API_KEY}`,
+            "Content-Type": "application/octet-stream"
+          },
+          body: bytes
+        });
+
+        if (!hfRes.ok) throw new Error(`HF API failed: ${hfRes.status}`);
+        let clipData = await hfRes.json();
+        // HF usually returns an array of numbers, or nested. Flat it.
+        if (Array.isArray(clipData)) {
+           const flatData = clipData.flat(Infinity);
+           if (flatData.length === 512) {
+             clipEmbeddingStr = `[${flatData.join(",")}]`;
+             console.log("CLIP embedding successfully generated! Dimensions: 512");
+           } else {
+             console.log("Warning: CLIP returned wrong dimensions:", flatData.length);
+           }
+        }
+      } catch (hfErr) {
+        console.error("Failed HF CLIP embedding:", hfErr);
+      }
+    }
+
+    // Step 3: Generate Text Embedding from OpenAI (for text fallback matching)
+    console.log("Generating text embedding from OpenAI...");
+    try {
+      const embeddingText = `${category || ""} ${subcategory || ""} ${imageDescription}`.trim();
+      
+      const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "text-embedding-3-small",
+          input: embeddingText,
+        }),
+      });
+
+      if (embeddingRes.ok) {
+        const embeddingData = await embeddingRes.json();
+        const textEmbeddingArray = embeddingData.data?.[0]?.embedding;
+        if (textEmbeddingArray && textEmbeddingArray.length === 1536) {
+           textEmbeddingStr = `[${textEmbeddingArray.join(",")}]`;
+           console.log("Text embedding successfully generated! Dimensions: 1536");
+        }
+      }
+    } catch (openaiErr) {
+       console.error("Failed OpenAI text embedding:", openaiErr);
+    }
+
+    // Step 4: Store Embeddings on the item
+    const table = item_type === "lost" ? "Lost_Item" : "Found_Item";
+    const idCol = item_type === "lost" ? "lost_id" : "found_id";
+    const clipCol = item_type === "lost" ? "lost_embedding" : "found_embedding";
+
+    const updatePayload: any = {
+      ai_description: imageDescription,
+      subcategory: subcategory || null,
+    };
+    if (clipEmbeddingStr) updatePayload[clipCol] = clipEmbeddingStr;
+    if (textEmbeddingStr) updatePayload["text_embedding"] = textEmbeddingStr;
+
+    const { error: updateError } = await supabase
+      .from(table)
+      .update(updatePayload)
+      .eq(idCol, item_id);
+
+    if (updateError) {
+      throw new Error(`Failed to store AI description/embedding: ${updateError.message}`);
+    }
+    console.log("AI description + embeddings stored for", table, item_id);
+
+    // Step 5: Find potential matches using pgvector RPC
+    let scoredMatches: any[] = [];
+    
+    // Primary: Image Match (> 80%)
+    if (clipEmbeddingStr) {
+       const rpcName = item_type === "lost" ? "match_lost_to_found" : "match_found_to_lost";
+       const { data: embeddingMatches } = await supabase.rpc(rpcName, {
+        _embedding: clipEmbeddingStr,
+        _subcategory: subcategory || "",
+        _limit: 10,
+       });
+
+       if (embeddingMatches) {
+         for (const m of embeddingMatches) {
+           if (m.similarity >= 0.80) {
+             scoredMatches.push({...m, matchType: 'photo'});
+           }
+         }
+       }
+    }
+
+    // Fallback: Text Match (> 40%) - Rule Check: Only for found items
+    // "If a student reports a lost item -> show them matching found item (if and only if student has uploaded an image don't do text matching...)"
+    if (scoredMatches.length === 0 && item_type === "found" && textEmbeddingStr) {
+       const { data: textMatches } = await supabase.rpc("match_found_to_lost_text", {
+        _embedding: textEmbeddingStr,
+        _subcategory: subcategory || "",
+        _limit: 10,
+       });
+
+       if (textMatches) {
+         for (const m of textMatches) {
+           if (m.similarity >= 0.40) {
+             scoredMatches.push({...m, matchType: 'text'});
+           }
+         }
+       }
     }
 
     scoredMatches.sort((a: any, b: any) => b.similarity - a.similarity);
     console.log("AI matches found:", scoredMatches.length);
 
-    // Step 5: Create notifications for strong matches
+    // Step 6: Create notifications for strong matches
     if (scoredMatches.length > 0 && item_type === "found") {
       for (const match of scoredMatches) {
         if (match.similarity > 0.65 && match.user_id) {
@@ -289,7 +246,7 @@ serve(async (req) => {
         success: true,
         matches: scoredMatches,
         description: imageDescription,
-        embedding_generated: !!embedding,
+        embedding_generated: !!clipEmbeddingStr || !!textEmbeddingStr,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

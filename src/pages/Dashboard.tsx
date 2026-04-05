@@ -149,9 +149,7 @@ const Dashboard = () => {
       const PHOTO_THRESHOLD = 0.5;
 
       for (const lostItem of userLostItems) {
-        let hasGoodPhotoMatch = false;
-
-        // STEP 1: Try photo/embedding comparison first
+        // STEP 1: Try photo/embedding comparison first. Only do matches if they uploaded an image!
         if (lostItem.lost_embedding) {
           const { data: matchData } = await supabase.rpc("match_lost_to_found", {
             _embedding: lostItem.lost_embedding,
@@ -161,8 +159,7 @@ const Dashboard = () => {
 
           if (matchData && matchData.length > 0) {
             for (const m of matchData) {
-              if (m.similarity >= PHOTO_THRESHOLD) {
-                hasGoodPhotoMatch = true;
+              if (m.similarity >= 0.80) { // Keep matches > 80%
                 allMatches.push({
                   lost_item: lostItem,
                   found_item: m,
@@ -174,37 +171,6 @@ const Dashboard = () => {
                   match_type: "photo",
                 });
               }
-            }
-          }
-        }
-        
-        // STEP 2: Only fall back to text-based matching if no good photo matches
-        if (!hasGoodPhotoMatch && allFoundItems) {
-          for (const foundItem of allFoundItems) {
-            if (allMatches.find(m => m.lost_item.lost_id === lostItem.lost_id && m.found_item.found_id === foundItem.found_id)) continue;
-            const { score, reasons } = calculateTextMatch(lostItem, foundItem);
-            if (score >= 0.5) {
-              allMatches.push({
-                lost_item: lostItem,
-                found_item: {
-                  found_id: foundItem.found_id,
-                  name: foundItem.name,
-                  category: foundItem.category,
-                  subcategory: foundItem.subcategory,
-                  location: foundItem.location,
-                  date_found: foundItem.date_found,
-                  description: foundItem.description,
-                  image_path: foundItem.image_path,
-                  status: foundItem.status,
-                },
-                image_similarity: 0,
-                subcategory_match: reasons.includes("Subcategory match"),
-                location_match: reasons.includes("Same location") || reasons.includes("Similar location"),
-                date_proximity: reasons.includes("Same day") ? 1 : reasons.includes("Within 3 days") ? 0.7 : reasons.includes("Within a week") ? 0.4 : 0,
-                final_score: score,
-                match_type: "text",
-                text_reasons: reasons,
-              });
             }
           }
         }
