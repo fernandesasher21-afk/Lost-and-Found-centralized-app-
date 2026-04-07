@@ -45,10 +45,11 @@ const ForgotPassword = () => {
         return;
       }
 
-      const type = hashParams.get("type");
-      const accessToken = hashParams.get("access_token");
+      // Instead of reading the hash (which Supabase might have removed),
+      // we check the reliable sessionStorage flag set in main.tsx
+      const isRecovery = sessionStorage.getItem("recovery_mode") === "true";
 
-      if (type === "recovery" && accessToken) {
+      if (isRecovery) {
         isRecoveryMode.current = true;
         setStep("reset");
       }
@@ -124,6 +125,8 @@ const ForgotPassword = () => {
       if (error) throw error;
 
       toast.success("Password updated successfully!");
+      // Clear the recovery flag so the user can log in naturally!
+      sessionStorage.removeItem("recovery_mode");
       // Sign out after password reset for security
       await supabase.auth.signOut();
       navigate("/login");
