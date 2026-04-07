@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, ArrowLeft, Send, KeyRound, Eye, EyeOff, Check, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,19 +21,50 @@ const ForgotPassword = () => {
   const [loading, setLoading] = useState(false);
   const [resetLinkSent, setResetLinkSent] = useState(false);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const isRecoveryMode = useRef(false);
 
-  // Listen specifically for the PASSWORD_RECOVERY event from Supabase
-  // This fires when a user clicks the reset link from their email
+  // Check URL for recovery token on mount - this is the primary detection method
+  // Supabase includes type=recovery in the URL hash when clicking password reset link
   useEffect(() => {
+    const checkRecoveryMode = () => {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      
+      // Handle Supabase auth errors (e.g., OTP expired due to email scanners)
+      const errorStr = hashParams.get("error");
+      const errorDescription = hashParams.get("error_description");
+      if (errorStr) {
+        let msg = "Invalid or expired reset link. Please request a new one.";
+        if (errorDescription) {
+          msg = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
+        }
+        toast.error(msg);
+        
+        // Clean up the URL hash so the error doesn't persist on refresh
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
+      }
+
+      const type = hashParams.get("type");
+      const accessToken = hashParams.get("access_token");
+
+      if (type === "recovery" && accessToken) {
+        isRecoveryMode.current = true;
+        setStep("reset");
+      }
+    };
+
+    // Check immediately on mount
+    checkRecoveryMode();
+
+    // Also listen for auth state changes as backup
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         isRecoveryMode.current = true;
         setStep("reset");
       }
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
