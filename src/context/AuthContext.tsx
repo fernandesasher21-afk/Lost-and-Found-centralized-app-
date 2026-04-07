@@ -16,6 +16,7 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string, role?: string, pid?: string) => Promise<void>;
   logout: () => void;
   isStaffOrAdmin: boolean;
+  isRecovering: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRecovering, setIsRecovering] = useState(false);
 
   const fetchProfile = async (supaUser: User) => {
     const { data } = await supabase
@@ -55,7 +57,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       async (event, session) => {
         // Skip setting user during password recovery to avoid redirecting
         // away from the reset password form
-        if (event === "PASSWORD_RECOVERY") {
+        if (event === "PASSWORD_RECOVERY" || sessionStorage.getItem("recovery_mode") === "true") {
+          setIsRecovering(true);
           setLoading(false);
           return;
         }
@@ -70,6 +73,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // Skip setting user if in recovery mode
+      if (sessionStorage.getItem("recovery_mode") === "true") {
+        setIsRecovering(true);
+        setLoading(false);
+        return;
+      }
       if (session?.user) {
         fetchProfile(session.user);
       } else {
@@ -104,7 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const isStaffOrAdmin = user?.role === "admin" || user?.role === "staff";
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, isStaffOrAdmin }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, isStaffOrAdmin, isRecovering }}>
       {children}
     </AuthContext.Provider>
   );
