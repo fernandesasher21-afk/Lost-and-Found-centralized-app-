@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { getUserFriendlyError } from "@/lib/errorMessages";
 
 const EditProfile = () => {
   const { user } = useAuth();
@@ -82,7 +83,7 @@ const EditProfile = () => {
 
       toast.success("Profile photo updated!");
     } catch (err: any) {
-      toast.error("Failed to upload photo: " + err.message);
+      toast.error(getUserFriendlyError(err, "upload"));
     } finally {
       setUploading(false);
     }
@@ -110,7 +111,7 @@ const EditProfile = () => {
       toast.success("Profile updated successfully!");
       navigate(-1);
     } catch (err: any) {
-      toast.error("Failed to update profile: " + err.message);
+      toast.error(getUserFriendlyError(err, "profile"));
     } finally {
       setSaving(false);
     }

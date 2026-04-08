@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import PageTransition from "@/components/PageTransition";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
+import { getUserFriendlyError } from "@/lib/errorMessages";
 
 const Register = () => {
   const [name, setName] = useState("");
@@ -32,7 +33,7 @@ const Register = () => {
       toast.success("Account created successfully! You can now log in.");
       navigate("/login");
     } catch (error: any) {
-      toast.error(error.message || "Registration failed");
+      toast.error(getUserFriendlyError(error, "register"));
     } finally {
       setLoading(false);
     }

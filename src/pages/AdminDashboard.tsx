@@ -287,6 +287,18 @@ const AdminDashboard = () => {
     let hasGoodTextAiMatch = false;
 
     // STEP 1: Try photo/embedding comparison first (Primary Image Match)
+    const isValidDateMatch = (lostDateStr: string | null, foundDateStr: string | null) => {
+      if (!lostDateStr || !foundDateStr) return true;
+      const lostDate = new Date(lostDateStr);
+      const foundDate = new Date(foundDateStr);
+      lostDate.setUTCHours(0, 0, 0, 0);
+      foundDate.setUTCHours(0, 0, 0, 0);
+      const diffTime = lostDate.getTime() - foundDate.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      // Valid if lost before found (<= -1), same day (0), or one day after (1)
+      return diffDays <= 1;
+    };
+
     if (foundItem.found_embedding) {
       const { data: embeddingMatches } = await supabase.rpc("match_found_to_lost", {
         _embedding: foundItem.found_embedding,
@@ -296,19 +308,22 @@ const AdminDashboard = () => {
 
       if (embeddingMatches && embeddingMatches.length > 0) {
         for (const m of embeddingMatches) {
+          const matchAny = m as any;
+          if (!isValidDateMatch(matchAny.date_lost, foundItem.date_found)) continue;
+
           if (m.similarity >= 0.80) { // Keep > 80%
             hasGoodPhotoMatch = true;
-            const lostItem = lostItems.find(l => l.lost_id === m.lost_id) || {
-              lost_id: m.lost_id,
+            const lostItem = lostItems.find(l => l.lost_id === matchAny.lost_id) || {
+              lost_id: matchAny.lost_id,
               name: m.name,
               category: m.category,
-              subcategory: m.subcategory,
-              status: m.status,
-              location: m.location,
-              date_lost: m.date_lost,
-              description: m.description,
-              image_path: m.image_path,
-              user_id: m.user_id,
+              subcategory: matchAny.subcategory,
+              status: matchAny.status,
+              location: matchAny.location,
+              date_lost: matchAny.date_lost,
+              description: matchAny.description,
+              image_path: matchAny.image_path,
+              user_id: matchAny.user_id,
               lost_embedding: null,
               text_embedding: null,
               ai_description: null,
@@ -335,22 +350,25 @@ const AdminDashboard = () => {
 
        if (textMatches && textMatches.length > 0) {
          for (const m of textMatches) {
+           const matchAny = m as any;
+           if (!isValidDateMatch(matchAny.date_lost, foundItem.date_found)) continue;
+
            if (m.similarity >= 0.40) { // Keep > 40% matching descriptions
              hasGoodTextAiMatch = true;
              // Don't duplicate matches
-             if (results.find(r => r.lostItem.lost_id === m.lost_id)) continue;
+             if (results.find(r => r.lostItem.lost_id === matchAny.lost_id)) continue;
              
-             const lostItem = lostItems.find(l => l.lost_id === m.lost_id) || {
-               lost_id: m.lost_id,
-               name: m.name,
-               category: m.category, // etc
-               subcategory: m.subcategory,
-               status: m.status,
-               location: m.location,
-               date_lost: m.date_lost,
-               description: m.description,
-               image_path: m.image_path,
-               user_id: m.user_id,
+             const lostItem = lostItems.find(l => l.lost_id === matchAny.lost_id) || {
+               lost_id: matchAny.lost_id,
+               name: matchAny.name,
+               category: matchAny.category, // etc
+               subcategory: matchAny.subcategory,
+               status: matchAny.status,
+               location: matchAny.location,
+               date_lost: matchAny.date_lost,
+               description: matchAny.description,
+               image_path: matchAny.image_path,
+               user_id: matchAny.user_id,
              };
              
              results.push({
@@ -368,6 +386,7 @@ const AdminDashboard = () => {
     if (!hasGoodPhotoMatch && !hasGoodTextAiMatch) {
       for (const lost of lostItems) {
         if (lost.status !== "Lost") continue;
+        if (!isValidDateMatch(lost.date_lost, foundItem.date_found)) continue;
         if (results.find(r => r.lostItem.lost_id === lost.lost_id)) continue;
         const match = calculateMatch(lost, foundItem);
         if (match.similarity >= 0.40) {

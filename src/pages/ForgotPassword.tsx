@@ -10,6 +10,7 @@ import PageTransition from "@/components/PageTransition";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { getUserFriendlyError } from "@/lib/errorMessages";
 
 const ForgotPassword = () => {
   const [step, setStep] = useState<"email" | "reset">("email");
@@ -29,27 +30,10 @@ const ForgotPassword = () => {
   useEffect(() => {
     const checkRecoveryMode = () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      
-      // Handle Supabase auth errors (e.g., OTP expired due to email scanners)
-      const errorStr = hashParams.get("error");
-      const errorDescription = hashParams.get("error_description");
-      if (errorStr) {
-        let msg = "Invalid or expired reset link. Please request a new one.";
-        if (errorDescription) {
-          msg = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
-        }
-        toast.error(msg);
-        
-        // Clean up the URL hash so the error doesn't persist on refresh
-        window.history.replaceState(null, "", window.location.pathname);
-        return;
-      }
+      const type = hashParams.get("type");
+      const accessToken = hashParams.get("access_token");
 
-      // Instead of reading the hash (which Supabase might have removed),
-      // we check the reliable sessionStorage flag set in main.tsx
-      const isRecovery = sessionStorage.getItem("recovery_mode") === "true";
-
-      if (isRecovery) {
+      if (type === "recovery" && accessToken) {
         isRecoveryMode.current = true;
         setStep("reset");
       }
@@ -94,7 +78,7 @@ const ForgotPassword = () => {
       setResetLinkSent(true);
       toast.success("Password reset link sent! Check your email.");
     } catch (error: any) {
-      toast.error(error.message || "Failed to send reset link");
+      toast.error(getUserFriendlyError(error, "reset"));
     } finally {
       setLoading(false);
     }
@@ -125,13 +109,11 @@ const ForgotPassword = () => {
       if (error) throw error;
 
       toast.success("Password updated successfully!");
-      // Clear the recovery flag so the user can log in naturally!
-      sessionStorage.removeItem("recovery_mode");
       // Sign out after password reset for security
       await supabase.auth.signOut();
       navigate("/login");
     } catch (error: any) {
-      toast.error(error.message || "Failed to update password");
+      toast.error(getUserFriendlyError(error, "reset"));
     } finally {
       setLoading(false);
     }

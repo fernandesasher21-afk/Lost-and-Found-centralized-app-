@@ -28,12 +28,6 @@
 </head>
 
   <body>
-    <script>
-      // Intercept recovery token in URL synchronously BEFORE React or Supabase load
-      if (window.location.hash.includes("type=recovery")) {
-        sessionStorage.setItem("recovery_mode", "true");
-      }
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

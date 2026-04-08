@@ -10,6 +10,7 @@ import PageTransition from "@/components/PageTransition";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { getUserFriendlyError } from "@/lib/errorMessages";
 
 const Login = () => {
   const [identifier, setIdentifier] = useState("");
@@ -49,7 +50,7 @@ const Login = () => {
       await login(email, password);
       toast.success("Logged in successfully!");
     } catch (error: any) {
-      toast.error(error.message || "Login failed");
+      toast.error(getUserFriendlyError(error, "login"));
     } finally {
       setLoading(false);
     }

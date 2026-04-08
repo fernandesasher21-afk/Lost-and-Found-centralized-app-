@@ -12,6 +12,7 @@ import { categories } from "@/lib/mockData";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
+import { getUserFriendlyError } from "@/lib/errorMessages";
 
 const subcategoryMap: Record<string, string[]> = {
   Electronics: ["Phone", "Laptop", "Charger", "Earbuds", "Tablet", "Smartwatch", "Camera", "Other (specify)"],
@@ -123,7 +124,7 @@ const ReportLost = () => {
       toast.success("Lost item reported successfully!");
       navigate("/dashboard");
     } catch (error: any) {
-      toast.error(error.message || "Failed to report item");
+      toast.error(getUserFriendlyError(error, "report"));
     } finally {
       setLoading(false);
     }

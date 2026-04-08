@@ -172,14 +172,20 @@ serve(async (req) => {
     console.log("AI description + embeddings stored for", table, item_id);
 
     // Step 5: Find potential matches using pgvector RPC
+    // Date filter: only match items where the date is within 1 day tolerance
+    // For found items: match with lost items where date_lost <= date_found + 1 day
+    // For lost items: match with found items where date_found >= date_lost - 1 day
     let scoredMatches: any[] = [];
-    
+    const parsedDate = date_value ? new Date(date_value) : null;
+
     // Primary: Image Match (> 80%)
     if (clipEmbeddingStr) {
        const rpcName = item_type === "lost" ? "match_lost_to_found" : "match_found_to_lost";
        const { data: embeddingMatches } = await supabase.rpc(rpcName, {
         _embedding: clipEmbeddingStr,
         _subcategory: subcategory || "",
+        _date_found: parsedDate && item_type === "found" ? parsedDate.toISOString().split('T')[0] : null,
+        _date_lost: parsedDate && item_type === "lost" ? parsedDate.toISOString().split('T')[0] : null,
         _limit: 10,
        });
 
@@ -198,6 +204,7 @@ serve(async (req) => {
        const { data: textMatches } = await supabase.rpc("match_found_to_lost_text", {
         _embedding: textEmbeddingStr,
         _subcategory: subcategory || "",
+        _date_found: parsedDate ? parsedDate.toISOString().split('T')[0] : null,
         _limit: 10,
        });
 
