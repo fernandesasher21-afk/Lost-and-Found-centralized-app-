@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,36 +8,71 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Validation Schema
+const RequestSchema = z.object({
+  image_base64: z.string().min(100),
+  item_type: z.enum(["lost", "found"]),
+  item_id: z.number(),
+  category: z.string().max(100),
+  subcategory: z.string().max(100).optional().nullable(),
+  location: z.string().max(200),
+  date_value: z.string().optional().nullable(),
+  original_description: z.string().max(1000).optional().nullable(),
+}).strict(); // Reject unexpected fields
+
+// Security: Strict HTML rejection regex
+const HTML_REGEX = /<[^>]*>/;
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not configured");
-
     const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
-    if (!HUGGINGFACE_API_KEY) throw new Error("HUGGINGFACE_API_KEY not configured");
+    
+    if (!LOVABLE_API_KEY || !OPENAI_API_KEY || !HUGGINGFACE_API_KEY) {
+      throw new Error("Missing API keys in environment");
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify user
+    // Get User for Rate Limiting and Verification
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Not authenticated");
+    if (!authHeader) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authError } = await anonClient.auth.getUser();
-    if (authError || !user) throw new Error("Unauthorized");
+    if (authError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
 
-    const { image_base64, item_type, item_id, category, subcategory, location, date_value, original_description } = await req.json();
+    // Rate Limiting Check (User-based)
+    const { data: isAllowed, error: rateLimitError } = await supabase.rpc("check_rate_limit", {
+      _key: user.id,
+      _endpoint: "process-item-image",
+      _limit: 30, // 30 requests per minute for authenticated users
+      _window_interval: "1 minute"
+    });
 
-    if (!image_base64 || !item_type || !item_id) {
-      throw new Error("Missing required fields: image_base64, item_type, item_id");
+    if (rateLimitError) console.error("Rate limit check error:", rateLimitError);
+    if (isAllowed === false) {
+      return new Response(JSON.stringify({ error: "Too many requests. Please wait a minute." }), { status: 429, headers: corsHeaders });
+    }
+
+    // Input Validation
+    const body = await req.json();
+    const result = RequestSchema.safeParse(body);
+    if (!result.success) {
+      return new Response(JSON.stringify({ error: "Invalid input", details: result.error.format() }), { status: 400, headers: corsHeaders });
+    }
+    const { image_base64, item_type, item_id, category, subcategory, location, date_value, original_description } = result.data;
+
+    // Security: Strict HTML Rejection
+    if (original_description && HTML_REGEX.test(original_description)) {
+      return new Response(JSON.stringify({ error: "HTML tags are not allowed in description" }), { status: 400, headers: corsHeaders });
     }
 
     const isImageUpload = image_base64 && image_base64.length > 100;

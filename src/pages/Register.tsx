@@ -11,12 +11,16 @@ import PageTransition from "@/components/PageTransition";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { getUserFriendlyError } from "@/lib/errorMessages";
+import { RegisterSchema } from "@/lib/validations";
 
 const Register = () => {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [pid, setPid] = useState("");
-  const [password, setPassword] = useState("");
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    pid: "",
+  });
   const [role, setRole] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -25,15 +29,23 @@ const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !pid || !password || !role) { toast.error("Please fill all fields"); return; }
-    if (pid.length !== 6) { toast.error("PID must be exactly 6 characters"); return; }
     setLoading(true);
+
     try {
-      await signup(email, password, name, role, pid);
-      toast.success("Account created successfully! You can now log in.");
+      // Input Validation
+      const result = RegisterSchema.safeParse(formData);
+      if (!result.success) {
+        toast.error(result.error.errors[0].message);
+        setLoading(false);
+        return;
+      }
+      if (!role) { toast.error("Please select a role"); setLoading(false); return; }
+
+      await signup(formData.email, formData.password, formData.name, role, formData.pid);
+      toast.success("Registration successful! Please sign in.");
       navigate("/login");
     } catch (error: any) {
-      toast.error(getUserFriendlyError(error, "register"));
+      toast.error(getUserFriendlyError(error, "signup"));
     } finally {
       setLoading(false);
     }
@@ -63,27 +75,32 @@ const Register = () => {
           <p className="text-sm text-muted-foreground mt-2">Join UniFound today</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm font-medium">Full Name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
+            <Input id="name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="John Doe" className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="pid" className="text-sm font-medium">PID (6 characters) *</Label>
-            <Input id="pid" value={pid} onChange={(e) => setPid(e.target.value.slice(0, 6).toUpperCase())} placeholder="e.g. AB1234" maxLength={6} className="bg-secondary/50 border-border/30 h-11 rounded-xl uppercase tracking-widest" />
-            {pid && pid.length !== 6 && <p className="text-xs text-destructive">PID must be exactly 6 characters</p>}
+            <Label htmlFor="pid" className="text-sm font-medium">PID *</Label>
+            <Input id="pid" value={formData.pid} onChange={(e) => setFormData({...formData, pid: e.target.value.toUpperCase()})} placeholder="e.g. AB1234" className="bg-secondary/50 border-border/30 h-11 rounded-xl uppercase tracking-widest" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-email" className="text-sm font-medium">Email</Label>
-            <Input id="reg-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@university.edu" className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
+            <Input id="reg-email" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} placeholder="you@university.edu" className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="reg-password" className="text-sm font-medium">Password</Label>
-            <div className="relative">
-              <Input id="reg-password" type={showPass ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="bg-secondary/50 border-border/30 h-11 rounded-xl pr-11" />
-              <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="reg-password" className="text-sm font-medium">Password</Label>
+              <div className="relative">
+                <Input id="reg-password" type={showPass ? "text" : "password"} value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} placeholder="••••••••" className="bg-secondary/50 border-border/30 h-11 rounded-xl pr-11 text-sm" />
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password" className="text-sm font-medium">Confirm</Label>
+              <Input id="confirm-password" type="password" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} placeholder="••••••••" className="bg-secondary/50 border-border/30 h-11 rounded-xl text-sm" />
             </div>
           </div>
           <div className="space-y-2">
@@ -98,7 +115,7 @@ const Register = () => {
               </SelectContent>
             </Select>
           </div>
-          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+          <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="pt-2">
             <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-12 rounded-xl text-base font-semibold glow gap-2">
               {loading ? "Creating..." : <>Create Account <ArrowRight className="w-4 h-4" /></>}
             </Button>

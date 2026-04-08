@@ -12,6 +12,8 @@ import { categories } from "@/lib/mockData";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { getUserFriendlyError } from "@/lib/errorMessages";
+import { useAuth } from "@/context/AuthContext";
+import { ReportItemSchema } from "@/lib/validations";
 
 const subcategoryMap: Record<string, string[]> = {
   Electronics: ["Phone", "Laptop", "Charger", "Earbuds", "Tablet", "Smartwatch", "Camera", "Other (specify)"],
@@ -41,6 +43,7 @@ const ReportFound = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please upload an image file"); return; }
@@ -54,18 +57,35 @@ const ReportFound = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalCategory = category === "Other" ? customCategory : category;
-    if (!itemName || !finalCategory || !location || !dateFound || !description) { toast.error("Please fill all required fields"); return; }
-    setLoading(true);
-    try {
-      const finalSubcategory = subcategory === "Other (specify)" ? customSubcategory : subcategory;
+    const finalSubcategory = subcategory === "Other (specify)" ? customSubcategory : subcategory;
 
+    // Input Validation via Zod
+    const validationResult = ReportItemSchema.safeParse({
+      name: itemName,
+      category: finalCategory,
+      subcategory: finalSubcategory || null,
+      location,
+      date: dateFound,
+      description,
+      color: color || null,
+      brand: brand || null,
+      marks: distinguishingMarks || null,
+    });
+
+    if (!validationResult.success) {
+      toast.error(validationResult.error.errors[0].message);
+      return;
+    }
+
+    if (!user) { toast.error("You must be logged in"); return; }
+    setLoading(true);
+
+    try {
       // Upload image to storage if exists
       let storedImagePath: string | null = null;
       if (imageFile) {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id || "anonymous";
         const fileExt = imageFile.name.split(".").pop();
-        const filePath = `found/${userId}/${Date.now()}.${fileExt}`;
+        const filePath = `found/${user.id}/${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage.from("item-images").upload(filePath, imageFile);
         if (uploadError) throw uploadError;
         const { data: urlData } = supabase.storage.from("item-images").getPublicUrl(filePath);
@@ -87,13 +107,14 @@ const ReportFound = () => {
         date_found: dateFound,
         description: fullDescription,
         status: "Found",
+        user_id: user.id,
         image_path: storedImagePath,
       }).select("found_id").single();
       if (error) throw error;
 
-      // If image uploaded, generate embedding via edge function
+      // Generate embedding via edge function
       if (imagePreview && insertedItem) {
-        toast.info("Generating AI embedding for this item...");
+        toast.info("Generating AI embedding for your item...");
         try {
           const response = await supabase.functions.invoke("process-item-image", {
             body: {
@@ -104,6 +125,7 @@ const ReportFound = () => {
               subcategory: finalSubcategory || null,
               location,
               date_value: dateFound,
+              original_description: description,
             },
           });
           if (response.error) {
@@ -119,7 +141,7 @@ const ReportFound = () => {
       }
 
       toast.success("Found item reported successfully!");
-      navigate("/admin");
+      navigate("/dashboard");
     } catch (error: any) {
       toast.error(getUserFriendlyError(error, "report"));
     } finally {

@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { getUserFriendlyError } from "@/lib/errorMessages";
 
+import { LoginSchema } from "@/lib/validations";
+
 const Login = () => {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -29,9 +31,17 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier || !password) { toast.error("Please fill all fields"); return; }
     setLoading(true);
+
     try {
+      // Input Validation
+      const result = LoginSchema.safeParse({ email: identifier, password });
+      if (!result.success) {
+        toast.error(result.error.errors[0].message);
+        setLoading(false);
+        return;
+      }
+
       let email = identifier;
       // If identifier doesn't look like an email, treat it as PID
       if (!identifier.includes("@")) {

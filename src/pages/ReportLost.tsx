@@ -26,6 +26,8 @@ const subcategoryMap: Record<string, string[]> = {
 
 const colorOptions = ["Black", "White", "Red", "Blue", "Green", "Yellow", "Brown", "Grey", "Pink", "Orange", "Purple", "Gold", "Silver", "Multi-color", "Other"];
 
+import { ReportItemSchema } from "@/lib/validations";
+
 const ReportLost = () => {
   const [itemName, setItemName] = useState("");
   const [category, setCategory] = useState("");
@@ -56,12 +58,29 @@ const ReportLost = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalCategory = category === "Other" ? customCategory : category;
-    if (!itemName || !finalCategory || !location || !dateLost || !description) { toast.error("Please fill all required fields"); return; }
+    const finalSubcategory = subcategory === "Other (specify)" ? customSubcategory : subcategory;
+    
+    // Input Validation via Zod
+    const validationResult = ReportItemSchema.safeParse({
+      name: itemName,
+      category: finalCategory,
+      subcategory: finalSubcategory || null,
+      location,
+      date: dateLost,
+      description,
+      color: color || null,
+      brand: brand || null,
+      marks: distinguishingMarks || null,
+    });
+
+    if (!validationResult.success) {
+      toast.error(validationResult.error.errors[0].message);
+      return;
+    }
+
     if (!user) { toast.error("You must be logged in"); return; }
     setLoading(true);
     try {
-      const finalSubcategory = subcategory === "Other (specify)" ? customSubcategory : subcategory;
-      
       // Upload image to storage if exists
       let storedImagePath: string | null = null;
       if (imageFile) {
@@ -97,7 +116,6 @@ const ReportLost = () => {
       if (imagePreview && insertedItem) {
         toast.info("Generating AI embedding for your item...");
         try {
-          const { data: session } = await supabase.auth.getSession();
           const response = await supabase.functions.invoke("process-item-image", {
             body: {
               image_base64: imagePreview,
@@ -107,6 +125,7 @@ const ReportLost = () => {
               subcategory: finalSubcategory || null,
               location,
               date_value: dateLost,
+              original_description: description,
             },
           });
           if (response.error) {
