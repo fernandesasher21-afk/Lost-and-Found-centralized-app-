@@ -76,7 +76,7 @@ const Navbar = () => {
                       <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl">
                         <Bell className="w-4 h-4" />
                         {unreadCount > 0 && (
-                          <Badge className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 text-[10px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center animate-pulse-glow">
+                          <Badge className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center animate-glow-pulse">
                             {unreadCount > 99 ? "99+" : unreadCount}
                           </Badge>
                         )}
@@ -126,7 +126,7 @@ const Navbar = () => {
                     <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl">
                       <Bell className="w-4 h-4 text-muted-foreground" />
                       {unreadCount > 0 && (
-                        <Badge className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center animate-pulse-glow">
+                        <Badge className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center animate-glow-pulse">
                           {unreadCount > 99 ? "99+" : unreadCount}
                         </Badge>
                       )}
