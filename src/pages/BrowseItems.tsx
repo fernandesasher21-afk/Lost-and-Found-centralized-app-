@@ -306,13 +306,16 @@ const BrowseItems = () => {
     }
 
     const details = [
+      `Description: ${claimDescription}`,
       `Name: ${claimName}`,
       `Category: ${finalClaimCategory}${finalClaimSubcategory ? ` - ${finalClaimSubcategory}` : ""}`,
       `Location: ${claimLocation}`,
       `Date Lost: ${claimDate}`,
-      ...detailParts,
+      claimColor && `Color: ${claimColor}`,
+      claimBrand && `Brand: ${claimBrand}`,
+      claimDistinguishingMarks && `Marks: ${claimDistinguishingMarks}`,
       photoBase64 && `Photo: [Uploaded]`,
-    ].filter(Boolean).join("\n");
+    ].filter(Boolean).join(" | ");
 
     const { error } = await supabase.from("Claim").insert({
       item_id: claimItem.found_id,
