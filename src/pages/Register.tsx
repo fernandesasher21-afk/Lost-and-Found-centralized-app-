@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { getUserFriendlyError } from "@/lib/errorMessages";
 import { RegisterSchema } from "@/lib/validations";
+import { supabase } from "@/integrations/supabase/client";
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -40,6 +41,23 @@ const Register = () => {
         return;
       }
       if (!role) { toast.error("Please select a role"); setLoading(false); return; }
+
+      // Check for existing email or PID pre-emptively
+      const { data: existingUser, error: checkError } = await supabase
+        .from("User")
+        .select("id, email, pid")
+        .or(`email.eq.${formData.email},pid.eq.${formData.pid.toUpperCase()}`)
+        .maybeSingle();
+
+      if (existingUser) {
+        if (existingUser.email === formData.email) {
+          toast.error("An account with this email already exists");
+        } else if (existingUser.pid === formData.pid.toUpperCase()) {
+          toast.error("This PID is already registered");
+        }
+        setLoading(false);
+        return;
+      }
 
       await signup(formData.email, formData.password, formData.name, role, formData.pid);
       toast.success("Registration successful! Please sign in.");
@@ -82,7 +100,7 @@ const Register = () => {
           </div>
           <div className="space-y-2">
             <Label htmlFor="pid" className="text-sm font-medium">PID *</Label>
-            <Input id="pid" value={formData.pid} onChange={(e) => setFormData({...formData, pid: e.target.value.toUpperCase()})} placeholder="e.g. AB1234" className="bg-secondary/50 border-border/30 h-11 rounded-xl uppercase tracking-widest" />
+            <Input id="pid" value={formData.pid} onChange={(e) => setFormData({...formData, pid: e.target.value.toUpperCase()})} placeholder="" className="bg-secondary/50 border-border/30 h-11 rounded-xl uppercase tracking-widest" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="reg-email" className="text-sm font-medium">Email</Label>

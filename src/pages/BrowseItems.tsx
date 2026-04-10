@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Filter, Package, Eye, MapPin, Calendar, Pencil, CheckCircle } from "lucide-react";
+import { Search, Filter, Package, Eye, MapPin, Calendar, Pencil, CheckCircle, ImageIcon, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,31 +14,54 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { ReportItemSchema } from "@/lib/validations";
+
+const subcategoryMap: Record<string, string[]> = {
+  Electronics: ["Phone", "Laptop", "Charger", "Earbuds", "Tablet", "Smartwatch", "Camera", "Other (specify)"],
+  "ID Cards": ["University ID", "Library Card", "Bus Pass", "Driving License", "Other (specify)"],
+  Books: ["Textbook", "Notebook", "Novel", "Reference Book", "Other (specify)"],
+  Wallets: ["Leather Wallet", "Card Holder", "Purse", "Money Clip", "Other (specify)"],
+  Keys: ["Room Key", "Vehicle Key", "Locker Key", "Key Chain Set", "Other (specify)"],
+  Clothing: ["Jacket", "Hoodie", "Cap", "Scarf", "Shoes", "Other (specify)"],
+  Accessories: ["Bag", "Backpack", "Umbrella", "Water Bottle", "Glasses", "Watch", "Other (specify)"],
+};
+
+const colorOptions = ["Black", "White", "Red", "Blue", "Green", "Yellow", "Brown", "Grey", "Pink", "Orange", "Purple", "Gold", "Silver", "Multi-color", "Other"];
 
 // Text-based matching for auto-verification
 function calculateTextMatchScore(lostItem: any, foundItem: any): number {
   let score = 0;
-  if (lostItem.category && foundItem.category && lostItem.category.toLowerCase() === foundItem.category.toLowerCase()) score += 0.25;
-  if (lostItem.subcategory && foundItem.subcategory && lostItem.subcategory.toLowerCase() === foundItem.subcategory.toLowerCase()) score += 0.20;
+  // Category match (30%)
+  if (lostItem.category && foundItem.category && lostItem.category.toLowerCase() === foundItem.category.toLowerCase()) score += 0.30;
+  
+  // Subcategory match (25%)
+  if (lostItem.subcategory && foundItem.subcategory && lostItem.subcategory.toLowerCase() === foundItem.subcategory.toLowerCase()) score += 0.25;
+  
+  // Location match (25%)
   if (lostItem.location && foundItem.location) {
     const ll = lostItem.location.toLowerCase(), fl = foundItem.location.toLowerCase();
-    if (ll === fl) score += 0.15;
-    else if (ll.includes(fl) || fl.includes(ll)) score += 0.10;
+    if (ll === fl) score += 0.25;
+    else if (ll.includes(fl) || fl.includes(ll)) score += 0.15;
   }
+  
+  // Description match (10%) - Reduced weight
   if (lostItem.description && foundItem.description) {
     const lw = new Set(lostItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2));
     const fw = new Set(foundItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2));
     const inter = [...lw].filter(w => fw.has(w));
     const union = new Set([...lw, ...fw]);
-    if (union.size > 0) score += 0.25 * (inter.length / union.size);
+    if (union.size > 0) score += 0.10 * (inter.length / union.size);
   }
-  if (lostItem.name && foundItem.name && lostItem.name.toLowerCase().includes(foundItem.name.toLowerCase())) score += 0.05;
+  
+  // Name match (5%)
+  if (lostItem.name && foundItem.name && (lostItem.name.toLowerCase().includes(foundItem.name.toLowerCase()) || foundItem.name.toLowerCase().includes(lostItem.name.toLowerCase()))) score += 0.05;
+  
+  // Date match (5%)
   if (lostItem.date_lost && foundItem.date_found) {
     const diff = Math.abs(new Date(lostItem.date_lost).getTime() - new Date(foundItem.date_found).getTime()) / (1000 * 60 * 60 * 24);
-    if (diff <= 1) score += 0.10;
-    else if (diff <= 3) score += 0.07;
-    else if (diff <= 7) score += 0.04;
-    else if (diff <= 15) score += 0.02;
+    if (diff <= 1) score += 0.05;
+    else if (diff <= 3) score += 0.03;
+    else if (diff <= 7) score += 0.01;
   }
   return score;
 }
@@ -60,6 +83,10 @@ interface LostItemRow {
   date_lost: string | null;
   description: string | null;
   image_path: string | null;
+  user_id: string | null;
+  reporter_name?: string | null;
+  reporter_email?: string | null;
+  reporter_pid?: string | null;
 }
 
 interface FoundItemRow {
@@ -71,6 +98,10 @@ interface FoundItemRow {
   date_found: string | null;
   description: string | null;
   image_path: string | null;
+  user_id?: string | null;
+  reporter_name?: string | null;
+  reporter_email?: string | null;
+  reporter_pid?: string | null;
 }
 
 const BrowseItems = () => {
@@ -89,11 +120,17 @@ const BrowseItems = () => {
   const [claimName, setClaimName] = useState("");
   const [claimCategory, setClaimCategory] = useState("");
   const [claimCustomCategory, setClaimCustomCategory] = useState("");
+  const [claimSubcategory, setClaimSubcategory] = useState("");
+  const [claimCustomSubcategory, setClaimCustomSubcategory] = useState("");
   const [claimLocation, setClaimLocation] = useState("");
   const [claimDate, setClaimDate] = useState("");
   const [claimDescription, setClaimDescription] = useState("");
+  const [claimColor, setClaimColor] = useState("");
+  const [claimBrand, setClaimBrand] = useState("");
+  const [claimDistinguishingMarks, setClaimDistinguishingMarks] = useState("");
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [claimPhoto, setClaimPhoto] = useState<File | null>(null);
+  const [claimPhotoPreview, setClaimPhotoPreview] = useState<string | null>(null);
   const [userClaimedItemIds, setUserClaimedItemIds] = useState<Set<number>>(new Set());
 
   // Status timeline dialog
@@ -123,18 +160,55 @@ const BrowseItems = () => {
         supabase.from("Lost_Item").select("*").order("date_lost", { ascending: false }),
         supabase.from("Found_Item").select("*").order("date_found", { ascending: false }),
       ]);
-      if (lostRes.data) {
-        // Sort: active items first, then recovered (Returned) items at the end
-        const activeLost = lostRes.data.filter(l => l.status !== "Returned");
-        const recoveredLost = lostRes.data.filter(l => l.status === "Returned");
-        setLostItems([...activeLost, ...recoveredLost]);
+
+      let lostItemsMap = (lostRes.data as any[]) || [];
+      let foundItemsMap = (foundRes.data as any[]) || [];
+
+      if (isStaffOrAdmin) {
+        // Fetch reporter details for admins
+        const userIds = [
+          ...new Set([
+            ...lostItemsMap.filter((i: any) => i.user_id).map((i: any) => i.user_id!),
+            ...foundItemsMap.filter((i: any) => i.user_id).map((i: any) => i.user_id!),
+          ]),
+        ];
+
+        if (userIds.length > 0) {
+          const { data: usersData } = await supabase
+            .from("User")
+            .select("id, name, email, pid")
+            .in("id", userIds);
+
+          if (usersData) {
+            const userLookup = Object.fromEntries(
+              usersData.map((u) => [u.id, { name: u.name, email: u.email, pid: (u as any).pid }])
+            );
+
+            lostItemsMap = lostItemsMap.map((item: any) => ({
+              ...item,
+              reporter_name: item.user_id ? (userLookup[item.user_id]?.name || "Unknown") : null,
+              reporter_email: item.user_id ? (userLookup[item.user_id]?.email || null) : null,
+              reporter_pid: item.user_id ? (userLookup[item.user_id]?.pid || null) : null,
+            })) as any[];
+
+            foundItemsMap = foundItemsMap.map((item: any) => ({
+              ...item,
+              reporter_name: item.user_id ? (userLookup[item.user_id]?.name || "Unknown") : null,
+              reporter_email: item.user_id ? (userLookup[item.user_id]?.email || null) : null,
+              reporter_pid: item.user_id ? (userLookup[item.user_id]?.pid || null) : null,
+            })) as any[];
+          }
+        }
       }
-      if (foundRes.data) {
-        // Sort: active (Found) items first, then recovered (Returned) items at the end
-        const activeFound = foundRes.data.filter(f => f.status !== "Returned");
-        const recoveredFound = foundRes.data.filter(f => f.status === "Returned");
-        setFoundItems([...activeFound, ...recoveredFound]);
-      }
+
+      // Sort: active items first, then recovered (Returned) items at the end
+      const activeLost = lostItemsMap.filter(l => l.status !== "Returned");
+      const recoveredLost = lostItemsMap.filter(l => l.status === "Returned");
+      setLostItems([...activeLost, ...recoveredLost]);
+
+      const activeFound = foundItemsMap.filter(f => f.status !== "Returned");
+      const recoveredFound = foundItemsMap.filter(f => f.status === "Returned");
+      setFoundItems([...activeFound, ...recoveredFound]);
 
       // Fetch user's existing claims
       if (user) {
@@ -147,7 +221,7 @@ const BrowseItems = () => {
       setLoading(false);
     };
     fetchItems();
-  }, [user]);
+  }, [user, isStaffOrAdmin]);
 
   // Handle claim param from dashboard redirect
   useEffect(() => {
@@ -180,10 +254,26 @@ const BrowseItems = () => {
       return;
     }
     const finalClaimCategory = claimCategory === "Other" ? claimCustomCategory : claimCategory;
-    if (!claimName.trim() || !finalClaimCategory || !claimLocation.trim() || !claimDate || !claimDescription.trim()) {
-      toast.error("Please fill in all required fields.");
+    const finalClaimSubcategory = claimSubcategory === "Other (specify)" ? claimCustomSubcategory : claimSubcategory;
+
+    // Validation via Zod
+    const validationResult = ReportItemSchema.safeParse({
+      name: claimName,
+      category: finalClaimCategory,
+      subcategory: finalClaimSubcategory || null,
+      location: claimLocation,
+      date: claimDate,
+      description: claimDescription,
+      color: claimColor || null,
+      brand: claimBrand || null,
+      marks: claimDistinguishingMarks || null,
+    });
+
+    if (!validationResult.success) {
+      toast.error(validationResult.error.errors[0].message);
       return;
     }
+
     setClaimSubmitting(true);
 
     // Check if user already claimed this item
@@ -200,6 +290,12 @@ const BrowseItems = () => {
       return;
     }
 
+    // Build detailed description with all fields
+    const detailParts = [`Description: ${claimDescription}`];
+    if (claimColor) detailParts.push(`Color: ${claimColor}`);
+    if (claimBrand) detailParts.push(`Brand: ${claimBrand}`);
+    if (claimDistinguishingMarks) detailParts.push(`Marks: ${claimDistinguishingMarks}`);
+
     let photoBase64: string | null = null;
     if (claimPhoto) {
       const reader = new FileReader();
@@ -211,12 +307,12 @@ const BrowseItems = () => {
 
     const details = [
       `Name: ${claimName}`,
-      `Category: ${finalClaimCategory}`,
+      `Category: ${finalClaimCategory}${finalClaimSubcategory ? ` - ${finalClaimSubcategory}` : ""}`,
       `Location: ${claimLocation}`,
-      `Date: ${claimDate}`,
-      `Description: ${claimDescription}`,
-      photoBase64 && `Photo: ${photoBase64}`,
-    ].filter(Boolean).join(" | ");
+      `Date Lost: ${claimDate}`,
+      ...detailParts,
+      photoBase64 && `Photo: [Uploaded]`,
+    ].filter(Boolean).join("\n");
 
     const { error } = await supabase.from("Claim").insert({
       item_id: claimItem.found_id,
@@ -315,7 +411,21 @@ const BrowseItems = () => {
                   .eq("lost_id", lostId);
               }
 
-              // Send notification to student
+              // Send notification to student via Edge Function (for email)
+              try {
+                await supabase.functions.invoke("send-notification-email", {
+                  body: {
+                    userId: user.id,
+                    message: `Congratulations! Your ownership claim for "${claimItem.name || "item"}" was automatically verified with a ${Math.round(bestMatch * 100)}% match. Please visit the lost and found desk to collect it at your earliest convenience.`,
+                    type: "claim_update",
+                    itemName: claimItem.name
+                  }
+                });
+              } catch (emailErr) {
+                console.error("Failed to send auto-approval email:", emailErr);
+              }
+
+              // Send in-app notification
               await supabase.from("notifications").insert({
                 user_id: user.id,
                 message: `✅ Your claim for "${claimItem.name || "Unknown Item"}" has been auto-approved with ${Math.round(bestMatch * 100)}% match! Please collect your item from the office.`,
@@ -364,11 +474,34 @@ const BrowseItems = () => {
     setClaimName("");
     setClaimCategory("");
     setClaimCustomCategory("");
+    setClaimSubcategory("");
+    setClaimCustomSubcategory("");
     setClaimLocation("");
     setClaimDate("");
     setClaimDescription("");
+    setClaimColor("");
+    setClaimBrand("");
+    setClaimDistinguishingMarks("");
     setClaimPhoto(null);
+    setClaimPhotoPreview(null);
   };
+
+  const handleClaimPhotoChange = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB");
+      return;
+    }
+    setClaimPhoto(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setClaimPhotoPreview(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const currentClaimSubcategories = claimCategory && claimCategory !== "Other" ? subcategoryMap[claimCategory] || [] : [];
 
   const openEditMode = () => {
     if (!foundDetailItem) return;
@@ -523,6 +656,17 @@ const BrowseItems = () => {
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <Calendar className="w-3.5 h-3.5" /> {(item as LostItemRow).date_lost || "N/A"}
                             </div>
+                            {isStaffOrAdmin && (item as LostItemRow).reporter_name && (
+                              <div className="pt-2 border-t border-border/20 mt-2 space-y-1">
+                                <div className="flex items-center gap-1.5 text-[10px] text-foreground font-medium">
+                                  <User className="w-2.5 h-2.5" /> {(item as LostItemRow).reporter_name}
+                                </div>
+                                <div className="flex flex-wrap gap-x-2 text-[9px] text-muted-foreground pl-4">
+                                  {(item as LostItemRow).reporter_pid && <span>PID: {(item as LostItemRow).reporter_pid}</span>}
+                                  {(item as LostItemRow).reporter_email && <span>{(item as LostItemRow).reporter_email}</span>}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </>
@@ -561,6 +705,17 @@ const BrowseItems = () => {
                           {item.status !== "Found" && (
                             <p className="text-xs text-muted-foreground mt-2">Click to view status</p>
                           )}
+                          {isStaffOrAdmin && (item as FoundItemRow).reporter_name && (
+                            <div className="pt-2 border-t border-border/20 mt-3 space-y-1">
+                              <div className="flex items-center gap-1.5 text-[10px] text-foreground font-medium">
+                                <User className="w-2.5 h-2.5" /> {(item as FoundItemRow).reporter_name}
+                              </div>
+                              <div className="flex flex-wrap gap-x-2 text-[9px] text-muted-foreground pl-4">
+                                {(item as FoundItemRow).reporter_pid && <span>PID: {(item as FoundItemRow).reporter_pid}</span>}
+                                {(item as FoundItemRow).reporter_email && <span>{(item as FoundItemRow).reporter_email}</span>}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </>
                     )}
@@ -581,60 +736,124 @@ const BrowseItems = () => {
 
       {/* Claim Dialog - report-style fields */}
       <Dialog open={claimDialogOpen} onOpenChange={(open) => { setClaimDialogOpen(open); if (!open) resetClaimForm(); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Claim Item: {claimItem?.name || "Item"}</DialogTitle>
-            <DialogDescription>
-              Provide details about your item to help verify your claim. All fields marked with * are required.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Item Name *</Label>
-              <Input value={claimName} onChange={(e) => setClaimName(e.target.value)} placeholder="e.g. Blue Backpack, iPhone 15..." className="bg-secondary border-0" required />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-0 border-0 glass-strong shadow-2xl">
+          <div className="p-8 md:p-10">
+            <DialogHeader className="mb-8">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                <CheckCircle className="w-7 h-7 text-primary" />
+              </div>
+              <DialogTitle className="text-3xl font-display font-bold">Claim Item: {claimItem?.name || "Item"}</DialogTitle>
+              <DialogDescription className="text-base mt-2">
+                Provide precise details about your lost item. This data is used to verify ownership and match with our records.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6">
               <div className="space-y-2">
-                <Label>Category *</Label>
-                <Select value={claimCategory} onValueChange={(v) => { setClaimCategory(v); if (v !== "Other") setClaimCustomCategory(""); }}>
-                  <SelectTrigger className="bg-secondary border-0"><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
-                    <SelectItem value="Other">Other (specify)</SelectItem>
-                  </SelectContent>
-                </Select>
-                {claimCategory === "Other" && (
-                  <Input value={claimCustomCategory} onChange={(e) => setClaimCustomCategory(e.target.value)} placeholder="Enter custom category..." className="bg-secondary border-0 mt-2" />
+                <Label className="text-sm font-medium">Item Name *</Label>
+                <Input value={claimName} onChange={(e) => setClaimName(e.target.value)} placeholder="e.g. Blue Backpack, iPhone 15..." className="bg-secondary/50 border-border/30 h-11 rounded-xl" required />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Category *</Label>
+                  <Select value={claimCategory} onValueChange={(v) => { setClaimCategory(v); setClaimSubcategory(""); if (v !== "Other") setClaimCustomCategory(""); }}>
+                    <SelectTrigger className="bg-secondary/50 border-border/30 h-11 rounded-xl"><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {categories.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
+                      <SelectItem value="Other">Other (specify)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {claimCategory === "Other" && (
+                    <Input value={claimCustomCategory} onChange={(e) => setClaimCustomCategory(e.target.value)} placeholder="Enter custom category..." className="bg-secondary/50 border-border/30 h-11 rounded-xl mt-2" />
+                  )}
+                </div>
+                {currentClaimSubcategories.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Subcategory</Label>
+                    <Select value={claimSubcategory} onValueChange={(v) => { setClaimSubcategory(v); if (v !== "Other (specify)") setClaimCustomSubcategory(""); }}>
+                      <SelectTrigger className="bg-secondary/50 border-border/30 h-11 rounded-xl"><SelectValue placeholder="Select subcategory" /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {currentClaimSubcategories.map((sc) => (<SelectItem key={sc} value={sc}>{sc}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
+                    {claimSubcategory === "Other (specify)" && (
+                      <Input value={claimCustomSubcategory} onChange={(e) => setClaimCustomSubcategory(e.target.value)} placeholder="Enter custom subcategory..." className="bg-secondary/50 border-border/30 h-11 rounded-xl mt-2" />
+                    )}
+                  </div>
                 )}
               </div>
-              <div className="space-y-2">
-                <Label>Location *</Label>
-                <Input value={claimLocation} onChange={(e) => setClaimLocation(e.target.value)} placeholder="Where was it lost?" className="bg-secondary border-0" />
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Color</Label>
+                  <Select value={claimColor} onValueChange={setClaimColor}>
+                    <SelectTrigger className="bg-secondary/50 border-border/30 h-11 rounded-xl"><SelectValue placeholder="Select color" /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {colorOptions.map((c) => (<SelectItem key={c} value={c}>{c}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Brand / Make</Label>
+                  <Input value={claimBrand} onChange={(e) => setClaimBrand(e.target.value)} placeholder="e.g. Samsung, Nike, HP..." className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
+                </div>
               </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Distinguishing Marks</Label>
+                <Input value={claimDistinguishingMarks} onChange={(e) => setClaimDistinguishingMarks(e.target.value)} placeholder="e.g. Scratches, stickers, engraving..." className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Location *</Label>
+                  <Input value={claimLocation} onChange={(e) => setClaimLocation(e.target.value)} placeholder="Where was it lost?" className="bg-secondary/50 border-border/30 h-11 rounded-xl" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Date Lost *</Label>
+                  <Input type="date" value={claimDate} onChange={(e) => setClaimDate(e.target.value)} max={new Date().toISOString().split("T")[0]} className="bg-secondary/50 border-border/30 h-11 rounded-xl" required />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Description *</Label>
+                <Textarea value={claimDescription} onChange={(e) => setClaimDescription(e.target.value)} placeholder="Provide any other details that can help verify this item is yours..." className="bg-secondary/50 border-border/30 min-h-[120px] rounded-xl" required />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Upload Reference Photo (optional)</Label>
+                <label
+                  className="border-2 border-dashed border-border/40 rounded-2xl p-6 text-center cursor-pointer hover:border-primary/30 hover:bg-primary/3 transition-all duration-300 block group"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleClaimPhotoChange(f); }}
+                >
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleClaimPhotoChange(f); }} />
+                  {claimPhotoPreview ? (
+                    <div className="space-y-3">
+                      <img src={claimPhotoPreview} alt="Preview" className="max-h-40 mx-auto rounded-xl object-contain shadow-md" />
+                      <p className="text-xs text-muted-foreground">Click to change photo</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="w-12 h-12 rounded-xl bg-secondary/80 flex items-center justify-center mx-auto group-hover:bg-primary/10 transition-colors">
+                        <ImageIcon className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-foreground">Click or drag to upload a photo of your item</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">For verification only — max 5MB</p>
+                      </div>
+                    </div>
+                  )}
+                </label>
+              </div>
+
+              <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} className="pt-2">
+                <Button onClick={handleClaim} disabled={claimSubmitting || !claimName.trim() || !(claimCategory === "Other" ? claimCustomCategory : claimCategory) || !claimLocation.trim() || !claimDate || !claimDescription.trim()} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-12 rounded-xl text-base font-semibold glow gap-2 shadow-lg">
+                  {claimSubmitting ? "Submitting Claim..." : "Submit Verification Details"}
+                </Button>
+              </motion.div>
             </div>
-            <div className="space-y-2">
-              <Label>Date Lost *</Label>
-              <Input type="date" value={claimDate} onChange={(e) => setClaimDate(e.target.value)} className="bg-secondary border-0" required />
-            </div>
-            <div className="space-y-2">
-              <Label>Description *</Label>
-              <Textarea value={claimDescription} onChange={(e) => setClaimDescription(e.target.value)} placeholder="Describe the item in detail (color, brand, distinguishing marks...)" className="bg-secondary border-0 min-h-[80px]" required />
-            </div>
-            <div className="space-y-2">
-              <Label>Upload Photo (optional)</Label>
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setClaimPhoto(e.target.files?.[0] || null)}
-                className="bg-secondary border-0"
-              />
-              {claimPhoto && (
-                <p className="text-xs text-muted-foreground">Selected: {claimPhoto.name}</p>
-              )}
-            </div>
-            <Button onClick={handleClaim} disabled={claimSubmitting || !claimName.trim() || !(claimCategory === "Other" ? claimCustomCategory : claimCategory) || !claimLocation.trim() || !claimDate || !claimDescription.trim()} className="w-full bg-primary text-primary-foreground">
-              {claimSubmitting ? "Submitting..." : "Submit Claim"}
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -7,7 +7,7 @@ const noHtml = (val: string) => !HTML_REGEX.test(val);
 const noHtmlMessage = "HTML tags are not allowed for security reasons";
 
 export const LoginSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  identifier: z.string().min(1, "PID or Email is required"),
   password: z.string().min(1, "Password is required"),
 });
 

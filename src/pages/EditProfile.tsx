@@ -184,7 +184,7 @@ const EditProfile = () => {
                   <Input
                     value={pid}
                     onChange={(e) => setPid(e.target.value.slice(0, 6))}
-                    placeholder="6-character PID"
+                    placeholder=""
                     maxLength={6}
                     className="uppercase"
                   />

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Shield, Package, Eye, ClipboardCheck, Bell, Users, Plus, CheckCircle, XCircle, Search, Percent, User, Send, History, Trash2 } from "lucide-react";
+import { Shield, Package, Eye, ClipboardCheck, Bell, Users, Plus, CheckCircle, XCircle, Search, Percent, User, Send, History, Trash2, Undo2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +51,8 @@ interface LostItem {
   text_embedding?: string | null;
   ai_description: string | null;
   reporter_name?: string | null;
+  reporter_email?: string | null;
+  reporter_pid?: string | null;
 }
 
 interface FoundItem {
@@ -114,73 +116,73 @@ function calculateMatch(lost: LostItem, found: FoundItem): MatchResult {
   let total = 0;
   const reasons: string[] = [];
 
-  // Category match (25 pts)
-  total += 25;
+  // Category match (30 pts) - HIGH PRIORITY
+  total += 30;
   if (lost.category && found.category && lost.category.toLowerCase() === found.category.toLowerCase()) {
-    score += 25;
+    score += 30;
     reasons.push("Category match");
   }
 
-  // Subcategory match (15 pts)
-  total += 15;
+  // Subcategory match (25 pts) - HIGH PRIORITY
+  total += 25;
   if (lost.subcategory && found.subcategory && lost.subcategory.toLowerCase() === found.subcategory.toLowerCase()) {
-    score += 15;
+    score += 25;
     reasons.push("Subcategory match");
   }
 
-  // Location match (15 pts)
-  total += 15;
+  // Location match (25 pts) - HIGH PRIORITY
+  total += 25;
   if (lost.location && found.location) {
     const ll = lost.location.toLowerCase();
     const fl = found.location.toLowerCase();
     if (ll === fl) {
-      score += 15;
-      reasons.push("Location match");
+      score += 25;
+      reasons.push("Location identical");
     } else if (ll.includes(fl) || fl.includes(ll)) {
-      score += 10;
-      reasons.push("Similar location");
+      score += 18;
+      reasons.push("Related location");
     }
   }
 
-  // Structured field matching: color, brand, size, distinguishing marks (20 pts)
+  // Structured field matching: color, brand, size, distinguishing marks (10 pts)
   const lostFields = parseDescriptionFields(lost.description);
   const foundFields = parseDescriptionFields(found.description);
 
-  // Color (7 pts)
-  total += 7;
+  // Color (3 pts)
+  total += 3;
   if (lostFields["color"] && foundFields["color"] && lostFields["color"] === foundFields["color"]) {
-    score += 7;
+    score += 3;
     reasons.push("Color match");
   }
 
-  // Brand (7 pts)
-  total += 7;
+  // Brand (4 pts)
+  total += 4;
   if (lostFields["brand"] && foundFields["brand"]) {
     if (lostFields["brand"] === foundFields["brand"]) {
-      score += 7;
-      reasons.push("Brand match");
-    } else if (lostFields["brand"].includes(foundFields["brand"]) || foundFields["brand"].includes(lostFields["brand"])) {
       score += 4;
-      reasons.push("Similar brand");
+      reasons.push("Brand identity");
+    } else if (lostFields["brand"].includes(foundFields["brand"]) || foundFields["brand"].includes(lostFields["brand"])) {
+      score += 2;
+      reasons.push("Possible brand match");
     }
   }
 
-  // Distinguishing marks (6 pts)
-  total += 6;
+  // Distinguishing marks (3 pts)
+  total += 3;
   if (lostFields["distinguishing marks"] && foundFields["distinguishing marks"]) {
     const lWords = new Set(lostFields["distinguishing marks"].split(/\s+/).filter(w => w.length > 2));
     const fWords = new Set(foundFields["distinguishing marks"].split(/\s+/).filter(w => w.length > 2));
     const overlap = [...lWords].filter(w => fWords.has(w));
     if (overlap.length > 0) {
-      score += Math.min(6, Math.round((overlap.length / Math.max(lWords.size, fWords.size)) * 6));
-      reasons.push("Marks similarity");
+      score += Math.min(3, Math.round((overlap.length / Math.max(lWords.size, fWords.size)) * 3));
+      reasons.push("Distinctive marks");
     }
   }
 
-  // Free text description similarity (20 pts)
+  // Free text description similarity (5 pts) - LOW PRIORITY (as text varies)
   const lostText = (lostFields["_text"] || lost.description || "").toLowerCase();
   const foundText = (foundFields["_text"] || found.description || "").toLowerCase();
-  total += 20;
+  total += 5;
   if (lostText && foundText) {
     const lostWords = new Set(lostText.split(/\s+/).filter(w => w.length > 2));
     const foundWords = new Set(foundText.split(/\s+/).filter(w => w.length > 2));
@@ -188,19 +190,19 @@ function calculateMatch(lost: LostItem, found: FoundItem): MatchResult {
     const union = new Set([...lostWords, ...foundWords]);
     if (union.size > 0) {
       const sim = intersection.length / union.size;
-      const descScore = Math.round(sim * 20);
+      const descScore = Math.round(sim * 5);
       score += descScore;
-      if (descScore > 5) reasons.push("Description similarity");
+      if (descScore >= 3) reasons.push("Descriptive similarity");
     }
   }
 
-  // Date proximity (12 pts)
-  total += 12;
+  // Date proximity (5 pts)
+  total += 5;
   if (lost.date_lost && found.date_found) {
     const diffDays = Math.abs(new Date(found.date_found).getTime() - new Date(lost.date_lost).getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays <= 1) { score += 12; reasons.push("Same day"); }
-    else if (diffDays <= 3) { score += 8; reasons.push("Within 3 days"); }
-    else if (diffDays <= 7) { score += 4; reasons.push("Within a week"); }
+    if (diffDays <= 1) { score += 5; reasons.push("Same day"); }
+    else if (diffDays <= 3) { score += 3; reasons.push("Close date"); }
+    else if (diffDays <= 7) { score += 1; reasons.push("Recent report"); }
   }
 
   const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
@@ -243,12 +245,17 @@ const AdminDashboard = () => {
     let lostWithNames: LostItem[] = [];
     if (lostRes.data) {
       const userIds = [...new Set(lostRes.data.filter(i => i.user_id).map(i => i.user_id!))];
-      let userMap: Record<string, string> = {};
+      let userMap: Record<string, { name: string; email: string; pid: string }> = {};
       if (userIds.length > 0) {
-        const { data: users } = await supabase.from("User").select("id, name").in("id", userIds);
-        if (users) userMap = Object.fromEntries(users.map(u => [u.id, u.name || "Unknown"]));
+        const { data: users } = await supabase.from("User").select("id, name, email, pid").in("id", userIds);
+        if (users) userMap = Object.fromEntries(users.map(u => [u.id, { name: u.name || "Unknown", email: u.email, pid: (u as any).pid || "" }]));
       }
-      lostWithNames = lostRes.data.map(item => ({ ...item, reporter_name: item.user_id ? (userMap[item.user_id] || "Unknown") : null }));
+      lostWithNames = lostRes.data.map(item => ({ 
+        ...item, 
+        reporter_name: item.user_id ? (userMap[item.user_id]?.name || "Unknown") : null,
+        reporter_email: item.user_id ? (userMap[item.user_id]?.email || null) : null,
+        reporter_pid: item.user_id ? (userMap[item.user_id]?.pid || null) : null
+      }));
     }
 
     setLostItems(lostWithNames);
@@ -426,6 +433,16 @@ const AdminDashboard = () => {
         }
       }
       toast.success(`Claim ${status}!`);
+      fetchData();
+    }
+  };
+
+  const handleDeleteLostItem = async (lostId: number) => {
+    const { error } = await supabase.from("Lost_Item").delete().eq("lost_id", lostId);
+    if (error) {
+      toast.error("Failed to delete lost item");
+    } else {
+      toast.success("Lost item deleted successfully");
       fetchData();
     }
   };
@@ -671,8 +688,14 @@ const AdminDashboard = () => {
                                     </div>
                                   )}
                                   {match.lostItem.reporter_name && (
-                                    <div className="flex items-center gap-1 mt-2 text-xs text-foreground">
-                                      <User className="w-3 h-3" /> Reported by: <span className="font-medium">{match.lostItem.reporter_name}</span>
+                                    <div className="mt-2 space-y-1">
+                                      <div className="flex items-center gap-1.5 text-xs text-foreground">
+                                        <User className="w-3 h-3" /> Reported by: <span className="font-medium">{match.lostItem.reporter_name}</span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground pl-4">
+                                        {match.lostItem.reporter_pid && <span>PID: {match.lostItem.reporter_pid}</span>}
+                                        {match.lostItem.reporter_email && <span>{match.lostItem.reporter_email}</span>}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -698,12 +721,44 @@ const AdminDashboard = () => {
                       <div className="font-medium text-foreground">{item.name || item.description || "No description"}</div>
                       <div className="text-sm text-muted-foreground">{item.category} • {item.location} • {item.date_lost}</div>
                       {item.reporter_name && (
-                        <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                          <User className="w-3 h-3" /> Reported by: <span className="font-medium text-foreground">{item.reporter_name}</span>
+                        <div className="mt-1 space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <User className="w-3 h-3" /> Reported by: <span className="font-medium text-foreground">{item.reporter_name}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground pl-4">
+                            {item.reporter_pid && <span>PID: {item.reporter_pid}</span>}
+                            {item.reporter_email && <span>{item.reporter_email}</span>}
+                          </div>
                         </div>
                       )}
                     </div>
-                    <Badge className={statusColors[item.status || ""] || ""}>{item.status}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className={statusColors[item.status || ""] || ""}>{item.status}</Badge>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={(e) => e.stopPropagation()}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Lost Item Report</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete this lost item report for "{item.name || "this item"}"? This action cannot be undone and will permanently remove it from the database.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleDeleteLostItem(item.lost_id)}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </motion.div>
                 ))}
               </div>
@@ -811,7 +866,66 @@ const AdminDashboard = () => {
                         <div className="text-sm text-muted-foreground">{item.category} • {item.location} • {item.date_found}</div>
                       </div>
                     </div>
-                    <Badge className="bg-success/20 text-success">Recovered</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-success/20 text-success">Recovered</Badge>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-warning/10 hover:text-warning" title="Undo recovery">
+                            <Undo2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Undo Recovery</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will mark "{item.name || item.description || "this item"}" as Found again and notify the owner that the recovery was cancelled. Are you sure?
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-warning text-warning-foreground hover:bg-warning/90"
+                              onClick={async () => {
+                                // Update found item status back to Found
+                                await supabase.from("Found_Item").update({ status: "Found" }).eq("found_id", item.found_id);
+
+                                // Find and update related lost items back to Lost status
+                                const matchedLost = lostItems.filter(l =>
+                                  l.category?.toLowerCase() === item.category?.toLowerCase() &&
+                                  l.location?.toLowerCase() === item.location?.toLowerCase() &&
+                                  l.status === "Returned"
+                                );
+                                for (const lost of matchedLost) {
+                                  await supabase.from("Lost_Item").update({ status: "Lost" }).eq("lost_id", lost.lost_id);
+
+                                  // Notify the owner about the cancellation
+                                  if (lost.user_id) {
+                                    await supabase.from("notifications").insert({
+                                      user_id: lost.user_id,
+                                      message: `⚠️ Recovery cancelled for "${lost.name || lost.description || lost.category}". The item is still in our possession.`,
+                                      status: "unread",
+                                      type: "info",
+                                      sender_id: currentUser?.id || null,
+                                    });
+                                  }
+                                }
+
+                                // Delete the recovery notification
+                                await supabase.from("notifications")
+                                  .delete()
+                                  .eq("type", "recovered")
+                                  .ilike("message", `%${item.name || item.description || ""}%`);
+
+                                toast.success("Recovery undone successfully!");
+                                fetchData();
+                              }}
+                            >
+                              Undo Recovery
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   </motion.div>
                 ))}
               </div>

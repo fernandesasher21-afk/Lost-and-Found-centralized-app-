@@ -35,7 +35,7 @@ const Login = () => {
 
     try {
       // Input Validation
-      const result = LoginSchema.safeParse({ email: identifier, password });
+      const result = LoginSchema.safeParse({ identifier, password });
       if (!result.success) {
         toast.error(result.error.errors[0].message);
         setLoading(false);
@@ -48,8 +48,9 @@ const Login = () => {
         const { data, error } = await supabase
           .from("User")
           .select("email")
-          .eq("pid", identifier.toUpperCase())
+          .eq("pid", identifier.trim().toUpperCase())
           .single();
+        
         if (error || !data) {
           toast.error("No account found with that PID");
           setLoading(false);
