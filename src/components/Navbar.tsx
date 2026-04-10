@@ -118,8 +118,22 @@ const Navbar = () => {
               ) : null}
             </div>
 
-            {/* Mobile Toggle */}
+            {/* Mobile Toggle & Icons */}
             <div className="flex md:hidden items-center gap-1">
+              {user && (
+                <Link to="/notifications">
+                  <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                    <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl">
+                      <Bell className="w-4 h-4 text-muted-foreground" />
+                      {unreadCount > 0 && (
+                        <Badge className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[9px] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center animate-pulse-glow">
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  </motion.div>
+                </Link>
+              )}
               <Button
                 variant="ghost"
                 size="icon"

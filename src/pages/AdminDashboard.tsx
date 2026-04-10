@@ -466,29 +466,27 @@ const AdminDashboard = () => {
   return (
     <PageTransition className="min-h-screen pt-20 pb-10">
       <div className="container px-4">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
-                <Shield className="w-5 h-5 text-accent" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-display font-bold text-foreground">Admin Panel</h1>
-                <p className="text-muted-foreground text-sm">Manage items, claims, and users</p>
-              </div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5 text-accent" />
+            </div>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground whitespace-nowrap">Admin Panel</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm">Manage items, claims, and users</p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Link to="/report-found">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button size="sm" className="gap-2 bg-primary text-primary-foreground">
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <Link to="/report-found" className="w-full sm:w-auto">
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button size="sm" className="w-full gap-2 bg-primary text-primary-foreground h-10 rounded-xl">
                   <Plus className="w-4 h-4" /> Report Found
                 </Button>
               </motion.div>
             </Link>
-            <Link to="/items">
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button size="sm" variant="outline" className="gap-2">
+            <Link to="/items" className="w-full sm:w-auto">
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <Button size="sm" variant="outline" className="w-full gap-2 h-10 rounded-xl border-border/40">
                   <Search className="w-4 h-4" /> Browse Items
                 </Button>
               </motion.div>
@@ -941,79 +939,131 @@ const AdminDashboard = () => {
                 {claims.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">No claims submitted yet.</div>
                 ) : (
-                  claims.map((claim, i) => (
-                    <motion.div key={claim.claim_id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass rounded-xl p-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          {claim.claimer_avatar ? (
-                            <img src={claim.claimer_avatar} alt="Student" className="w-10 h-10 rounded-full object-cover border border-border" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
-                              <User className="w-5 h-5 text-primary" />
-                            </div>
-                          )}
-                          <div>
-                            <span className="font-medium text-foreground block">{claim.claimer_name}</span>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              {claim.claimer_pid && <span>PID: {claim.claimer_pid}</span>}
-                              {claim.claimer_pid && claim.claimer_email && <span>•</span>}
-                              {claim.claimer_email && <span>{claim.claimer_email}</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <Badge className={statusColors[claim.claim_status || ""] || ""}>{claim.claim_status}</Badge>
-                      </div>
-                      <div className="text-sm text-foreground mb-1">
-                        <strong>Item:</strong> {claim.item_name}
-                      </div>
-                      {claim.verification_details && (() => {
-                        const parts = claim.verification_details.split(" | ");
-                        const photoPart = parts.find(p => p.startsWith("Photo: "));
-                        const textParts = parts.filter(p => !p.startsWith("Photo: ")).join(" | ");
-                        return (
-                          <>
-                            <div className="text-sm text-muted-foreground mb-2">
-                              <strong>Details:</strong> {textParts}
-                            </div>
-                            {photoPart && (
-                              <div className="mb-2">
-                                <img src={photoPart.replace("Photo: ", "")} alt="Claim photo" className="max-h-40 rounded-lg object-contain border border-border" />
+                  claims.map((claim, i) => {
+                    // Find the best match for this student's claim
+                    const claimFoundItem = foundItems.find(f => f.found_id === claim.item_id);
+                    let bestMatch: MatchResult | null = null;
+                    
+                    if (claimFoundItem && claim.user_id) {
+                      const studentLostItems = lostItems.filter(l => l.user_id === claim.user_id);
+                      for (const lost of studentLostItems) {
+                        const match = calculateMatch(lost, claimFoundItem);
+                        if (!bestMatch || match.similarity > bestMatch.similarity) {
+                          bestMatch = match;
+                        }
+                      }
+                    }
+
+                    return (
+                      <motion.div key={claim.claim_id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass rounded-xl p-5 border border-border/40 overflow-hidden relative group">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            {claim.claimer_avatar ? (
+                              <img src={claim.claimer_avatar} alt="Student" className="w-10 h-10 rounded-full object-cover border border-border" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                <User className="w-5 h-5 text-primary" />
                               </div>
                             )}
-                          </>
-                        );
-                      })()}
-                      <div className="text-xs text-muted-foreground mb-3">
-                        Claimed on: {claim.claim_date ? new Date(claim.claim_date).toLocaleDateString() : "N/A"}
-                      </div>
-                      <div className="flex gap-2 flex-wrap">
-                        {claim.claim_status === "pending" && (
-                          <>
-                            <Button size="sm" className="gap-1 bg-success/20 text-success hover:bg-success/30" onClick={() => handleUpdateClaimStatus(claim.claim_id, "approved")}>
-                              <CheckCircle className="w-3 h-3" /> Approve
-                            </Button>
-                            <Button size="sm" className="gap-1 bg-destructive/20 text-destructive hover:bg-destructive/30" onClick={() => handleUpdateClaimStatus(claim.claim_id, "rejected")}>
-                              <XCircle className="w-3 h-3" /> Reject
-                            </Button>
-                          </>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1"
-                          onClick={() => {
-                            if (claim.user_id) {
-                              setClaimMessageTarget({ userId: claim.user_id, name: claim.claimer_name || "Student" });
-                              setClaimMessage("");
-                              setClaimMessageDialogOpen(true);
-                            }
-                          }}
-                        >
-                          <Send className="w-3 h-3" /> Message
-                        </Button>
-                      </div>
-                    </motion.div>
-                  ))
+                            <div>
+                                <span className="font-semibold text-foreground block">{claim.claimer_name}</span>
+                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
+                                  {claim.claimer_pid && <span>PID: {claim.claimer_pid}</span>}
+                                  {claim.claimer_pid && claim.claimer_email && <span>•</span>}
+                                  {claim.claimer_email && <span>{claim.claimer_email}</span>}
+                                </div>
+                            </div>
+                          </div>
+                          <Badge className={`${statusColors[claim.claim_status || ""]} font-semibold px-2.5 py-0.5 rounded-full text-[10px] uppercase tracking-wide shadow-sm flex items-center gap-1.5`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${claim.claim_status === "pending" ? "bg-accent animate-pulse" : "bg-current"}`} />
+                            {claim.claim_status}
+                          </Badge>
+                        </div>
+
+                        <div className="mb-4">
+                          <div className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                             <Package className="w-4 h-4 text-primary" />
+                             Claimed Item: {claim.item_name}
+                          </div>
+                          
+                          {claim.verification_details && (() => {
+                            const parts = claim.verification_details.split(" | ");
+                            const photoPart = parts.find(p => p.startsWith("Photo: "));
+                            const textParts = parts.filter(p => !p.startsWith("Photo: ")).join(" | ");
+                            return (
+                              <div className="bg-secondary/30 rounded-xl p-3 border border-border/20 mb-3">
+                                <div className="text-xs text-foreground leading-relaxed">
+                                  <strong className="text-primary/80 uppercase text-[9px] block mb-1">Student Description:</strong>
+                                  {textParts || "No text details provided"}
+                                </div>
+                                {photoPart && (
+                                  <div className="mt-3">
+                                    <img src={photoPart.replace("Photo: ", "")} alt="Claim photo" className="max-h-48 w-full rounded-lg object-contain bg-background/50 border border-border/30 shadow-sm" />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mt-6 pt-4 border-t border-border/20">
+                          <div className="space-y-3 flex-1">
+                            <div className="flex gap-2 flex-wrap">
+                              {claim.claim_status === "pending" && (
+                                <>
+                                  <Button size="sm" className="gap-1.5 bg-success/20 text-success hover:bg-success/30 h-8 font-semibold rounded-lg" onClick={() => handleUpdateClaimStatus(claim.claim_id, "approved")}>
+                                    <CheckCircle className="w-3.5 h-3.5" /> Approve
+                                  </Button>
+                                  <Button size="sm" className="gap-1.5 bg-destructive/20 text-destructive hover:bg-destructive/30 h-8 font-semibold rounded-lg" onClick={() => handleUpdateClaimStatus(claim.claim_id, "rejected")}>
+                                    <XCircle className="w-3.5 h-3.5" /> Reject
+                                  </Button>
+                                </>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 h-8 font-semibold rounded-lg border-border/40"
+                                onClick={() => {
+                                  if (claim.user_id) {
+                                    setClaimMessageTarget({ userId: claim.user_id, name: claim.claimer_name || "Student" });
+                                    setClaimMessage("");
+                                    setClaimMessageDialogOpen(true);
+                                  }
+                                }}
+                              >
+                                <Send className="w-3.5 h-3.5" /> Message
+                              </Button>
+                            </div>
+                            
+                            {bestMatch && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-xs mb-1">
+                                  <span className="text-muted-foreground font-medium flex items-center gap-1.5">
+                                    <Percent className="w-3.5 h-3.5" /> Automated Match Confidence
+                                  </span>
+                                  <span className={`font-bold ${bestMatch.similarity >= 0.8 ? "text-success" : bestMatch.similarity >= 0.6 ? "text-accent" : "text-muted-foreground"}`}>
+                                    {Math.round(bestMatch.similarity * 100)}% Match
+                                  </span>
+                                </div>
+                                <Progress value={bestMatch.similarity * 100} className={`h-1.5 rounded-full ${bestMatch.similarity >= 0.8 ? "[&>div]:bg-success" : bestMatch.similarity >= 0.6 ? "[&>div]:bg-accent" : ""}`} />
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {bestMatch.reasons.map(r => (
+                                    <Badge key={r} variant="ghost" className="bg-secondary/50 text-muted-foreground text-[9px] px-1.5 py-0 h-4 uppercase tracking-tighter">
+                                      {r}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="text-[10px] text-muted-foreground font-medium flex-shrink-0 bg-secondary/20 px-2 py-1 rounded-md mb-0.5 sm:mb-0">
+                            SUBMITTED: {claim.claim_date ? new Date(claim.claim_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : "N/A"}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })
                 )}
               </motion.div>
             )}
