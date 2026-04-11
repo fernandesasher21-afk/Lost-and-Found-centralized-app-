@@ -35,6 +35,24 @@ export function useRealtimeNotifications() {
     setLoading(false);
   }, [user]);
 
+  const cleanupOldNotifications = useCallback(async () => {
+    if (!user) return;
+    
+    // Calculate 48 hours ago
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setHours(twoDaysAgo.getHours() - 48);
+    const threshold = twoDaysAgo.toISOString();
+
+    try {
+      await supabase
+        .from("notifications")
+        .delete()
+        .lt("date_sent", threshold);
+    } catch (error) {
+      console.error("Failed to cleanup old notifications:", error);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) {
       setNotifications([]);
@@ -43,7 +61,12 @@ export function useRealtimeNotifications() {
       return;
     }
 
-    fetchNotifications();
+    const init = async () => {
+      await cleanupOldNotifications();
+      await fetchNotifications();
+    };
+
+    init();
 
     // Subscribe to real-time inserts for this user
     const channel = supabase

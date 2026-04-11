@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Package, Search, Clock, CheckCircle, AlertTriangle, ArrowRight, TrendingUp, Sparkles, MapPin, Calendar, Tag, HandMetal, Trash2 } from "lucide-react";
+import { Package, Search, Clock, CheckCircle, AlertTriangle, ArrowRight, TrendingUp, Sparkles, MapPin, Calendar, Tag, HandMetal, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
@@ -9,9 +9,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PageTransition from "@/components/PageTransition";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
+import { categories } from "@/lib/mockData";
 import { toast } from "sonner";
 
 const statusColors: Record<string, string> = {
@@ -96,6 +98,17 @@ const Dashboard = () => {
   const [claimingMatch, setClaimingMatch] = useState<any>(null);
   const [claimDetails, setClaimDetails] = useState("");
   const [claimSubmitting, setClaimSubmitting] = useState(false);
+
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editSubcategory, setEditSubcategory] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editDateLost, setEditDateLost] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   useEffect(() => {
     const tabParam = searchParams.get("tab");
@@ -286,6 +299,39 @@ const Dashboard = () => {
     }
   };
 
+  const handleEditSubmit = async () => {
+    if (!editingItem || !editName.trim() || !editCategory || !editLocation.trim()) return;
+    setEditSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("Lost_Item")
+        .update({
+          name: editName,
+          category: editCategory,
+          subcategory: editSubcategory,
+          location: editLocation,
+          date_lost: editDateLost,
+          description: editDescription,
+        })
+        .eq("lost_id", editingItem.lost_id);
+      
+      if (error) throw error;
+
+      toast.success("Item updated successfully");
+      setLostItems(prev => prev.map(item => 
+        item.lost_id === editingItem.lost_id 
+          ? { ...item, name: editName, category: editCategory, subcategory: editSubcategory, location: editLocation, date_lost: editDateLost, description: editDescription } 
+          : item
+      ));
+      setEditDialogOpen(false);
+      setEditingItem(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update item");
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   const statCards = [
     { icon: AlertTriangle, label: "My Lost Items", value: lostItems.length, color: "text-destructive", bg: "bg-destructive/10" },
     { icon: CheckCircle, label: "Recovered", value: recoveredItems.length, color: "text-success", bg: "bg-success/10" },
@@ -369,6 +415,26 @@ const Dashboard = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge className={`${statusColors[item.status] || ""} rounded-lg`}>{item.status}</Badge>
+                      {item.status !== "Returned" && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-primary hover:bg-primary/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingItem(item);
+                            setEditName(item.name || "");
+                            setEditCategory(item.category || "");
+                            setEditSubcategory(item.subcategory || "");
+                            setEditLocation(item.location || "");
+                            setEditDateLost(item.date_lost || "");
+                            setEditDescription(item.description || "");
+                            setEditDialogOpen(true);
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                      )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={(e) => e.stopPropagation()}>
@@ -653,6 +719,63 @@ const Dashboard = () => {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Lost Item Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Lost Item: {editingItem?.name}</DialogTitle>
+            <DialogDescription>Update the details of your lost item.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Item Name</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="e.g. Blue Backpack" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Subcategory (Optional)</Label>
+                <Input value={editSubcategory} onChange={(e) => setEditSubcategory(e.target.value)} placeholder="e.g. Phone, Wallet" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="e.g. Library 2nd Floor" />
+              </div>
+              <div className="space-y-2">
+                <Label>Date Lost</Label>
+                <Input type="date" value={editDateLost} onChange={(e) => setEditDateLost(e.target.value)} max={new Date().toISOString().split("T")[0]} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="min-h-[100px]" placeholder="Additional details..." />
+            </div>
+            <Button
+              className="w-full gap-2 bg-primary text-primary-foreground mt-2"
+              disabled={editSubmitting || !editName.trim() || !editCategory || !editLocation.trim()}
+              onClick={handleEditSubmit}
+            >
+              {editSubmitting ? "Saving Changes..." : "Save Changes"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </PageTransition>

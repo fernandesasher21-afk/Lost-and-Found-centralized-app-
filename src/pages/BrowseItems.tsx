@@ -693,7 +693,9 @@ const BrowseItems = () => {
                         <div className="p-5">
                           <div className="flex items-start justify-between">
                             <h3 className="font-medium text-foreground text-sm leading-tight">{item.name || "Unknown Item"}</h3>
-                            <Badge className={`ml-2 text-xs ${statusColors[item.status || ""] || ""}`}>{item.status}</Badge>
+                            <Badge className={`ml-2 text-xs ${statusColors[item.status || ""] || ""}`}>
+                              {item.status === "Returned" ? "Returned to Owner" : item.status}
+                            </Badge>
                           </div>
                           {!isStaffOrAdmin && item.status === "Found" && !userClaimedItemIds.has((item as FoundItemRow).found_id) && (
                             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="mt-4">
@@ -976,7 +978,9 @@ const BrowseItems = () => {
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-muted-foreground">Status:</span>
-                  <Badge className={statusColors[foundDetailItem.status] || ""}>{foundDetailItem.status}</Badge>
+                  <Badge className={statusColors[foundDetailItem.status] || ""}>
+                    {foundDetailItem.status === "Returned" ? "Returned to Owner" : foundDetailItem.status}
+                  </Badge>
                 </div>
                 {foundDetailItem.description && (
                   <div className="text-sm">
@@ -985,9 +989,44 @@ const BrowseItems = () => {
                   </div>
                 )}
               </div>
-              <Button onClick={openEditMode} className="w-full gap-2">
-                <Pencil className="w-4 h-4" /> Edit Item Details
-              </Button>
+              <div className="flex flex-col gap-2">
+                {foundDetailItem.status !== "Returned" && (
+                  <Button 
+                    onClick={async () => {
+                      const { error } = await supabase.from("Found_Item").update({ status: "Returned" }).eq("found_id", foundDetailItem.found_id);
+                      if (error) toast.error("Failed to mark as returned");
+                      else {
+                        toast.success("Item marked as returned");
+                        setFoundItems(prev => prev.map(f => f.found_id === foundDetailItem.found_id ? { ...f, status: "Returned" } : f));
+                        setFoundDetailItem({ ...foundDetailItem, status: "Returned" });
+                      }
+                    }} 
+                    className="w-full gap-2 bg-success text-white hover:bg-success/90"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Mark as Recovered
+                  </Button>
+                )}
+                {foundDetailItem.status === "Returned" && (
+                  <Button 
+                    onClick={async () => {
+                      const { error } = await supabase.from("Found_Item").update({ status: "Found" }).eq("found_id", foundDetailItem.found_id);
+                      if (error) toast.error("Failed to undo recovery");
+                      else {
+                        toast.success("Recovery undone");
+                        setFoundItems(prev => prev.map(f => f.found_id === foundDetailItem.found_id ? { ...f, status: "Found" } : f));
+                        setFoundDetailItem({ ...foundDetailItem, status: "Found" });
+                      }
+                    }} 
+                    variant="outline"
+                    className="w-full gap-2"
+                  >
+                    <Undo2 className="w-4 h-4" /> Undo Recovery
+                  </Button>
+                )}
+                <Button onClick={openEditMode} variant="secondary" className="w-full gap-2">
+                  <Pencil className="w-4 h-4" /> Edit Item Details
+                </Button>
+              </div>
             </div>
           )}
           {foundDetailItem && editingFound && (
