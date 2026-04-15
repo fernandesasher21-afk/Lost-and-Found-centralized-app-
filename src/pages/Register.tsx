@@ -59,9 +59,17 @@ const Register = () => {
         return;
       }
 
-      await signup(formData.email, formData.password, formData.name, role, formData.pid);
-      toast.success("Registration successful! Please sign in.");
-      navigate("/login");
+      const data = await signup(formData.email, formData.password, formData.name, role, formData.pid);
+      
+      if (data?.session) {
+        toast.success("Registration successful! Welcome to UniFound.");
+        navigate("/dashboard");
+      } else {
+        toast.success("Registration successful! Please check your email to confirm your account before signing in.", {
+          duration: 6000,
+        });
+        navigate("/login");
+      }
     } catch (error: any) {
       toast.error(getUserFriendlyError(error, "signup"));
     } finally {

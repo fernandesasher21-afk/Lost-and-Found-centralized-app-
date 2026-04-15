@@ -613,6 +613,10 @@ const BrowseItems = () => {
                     onClick={() => {
                       if (tab === "found") {
                         const foundItem = item as FoundItemRow;
+                        if (foundItem.status === "Returned") {
+                          // Do nothing for recovered items - no action should happen
+                          return;
+                        }
                         if (isStaffOrAdmin) {
                           setFoundDetailItem(foundItem);
                           setEditingFound(false);
@@ -941,7 +945,7 @@ const BrowseItems = () => {
       </Dialog>
       {/* Found Item Detail Dialog (Incharge/Admin) */}
       <Dialog open={foundDetailOpen} onOpenChange={(open) => { setFoundDetailOpen(open); if (!open) setEditingFound(false); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto bg-card border border-border/50">
           <DialogHeader>
             <DialogTitle>{editingFound ? "Edit Found Item" : (foundDetailItem?.name || "Found Item Details")}</DialogTitle>
             <DialogDescription>
