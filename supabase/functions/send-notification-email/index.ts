@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,8 +26,15 @@ serve(async (req) => {
   }
 
   try {
-    const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-    if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY not configured");
+    const SMTP_HOST = Deno.env.get("SMTP_HOST") || "smtp.gmail.com";
+    const SMTP_PORT = parseInt(Deno.env.get("SMTP_PORT") || "465");
+    const SMTP_USER = Deno.env.get("SMTP_USER");
+    const SMTP_PASS = Deno.env.get("SMTP_PASS");
+    const SMTP_FROM_NAME = Deno.env.get("SMTP_FROM_NAME") || "UniFound";
+
+    if (!SMTP_USER || !SMTP_PASS) {
+      throw new Error("SMTP credentials not configured");
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -130,35 +138,34 @@ serve(async (req) => {
         `;
     }
 
-    // Send email via Resend
-    const emailResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "UniFound <unifoundstac@gmail.com>", // Update with your verified sender
-        to: recipient.email,
-        subject,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
-            ${emailContent}
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #999; font-size: 12px; text-align: center;">
-              UniFound - Lost & Found Platform<br>
-              <a href="${supabaseUrl.replace('.supabase.co', '')}" style="color: #4F46E5;">Visit Dashboard</a>
-            </p>
-          </div>
-        `,
-      }),
+    // Send email via SMTP
+    const client = new SmtpClient();
+    
+    await client.connectTLS({
+      hostname: SMTP_HOST,
+      port: SMTP_PORT,
+      username: SMTP_USER,
+      password: SMTP_PASS,
     });
 
-    if (!emailResponse.ok) {
-      const err = await emailResponse.text();
-      console.error("Resend error:", emailResponse.status, err);
-      throw new Error("Failed to send email");
-    }
+    await client.send({
+      from: `${SMTP_FROM_NAME} <${SMTP_USER}>`,
+      to: recipient.email,
+      subject,
+      content: message, // Plain text fallback
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+          ${emailContent}
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="color: #999; font-size: 12px; text-align: center;">
+            UniFound - Lost & Found Platform<br>
+            <a href="${supabaseUrl.replace('.supabase.co', '')}" style="color: #4F46E5;">Visit Dashboard</a>
+          </p>
+        </div>
+      `,
+    });
+
+    await client.close();
 
     console.log("Notification email sent to:", recipient.email);
 

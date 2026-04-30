@@ -62,10 +62,13 @@ const Register = () => {
       const data = await signup(formData.email, formData.password, formData.name, role, formData.pid);
       
       if (data?.session) {
-        toast.success("Registration successful! Welcome to UniFound.");
+        toast.success("Welcome to UniFound! Your account has been created successfully.", {
+          duration: 5000,
+        });
         navigate("/dashboard");
       } else {
-        toast.success("Registration successful! Please check your email to confirm your account before signing in.", {
+        // If session is null, it means email confirmation is still enabled in Supabase
+        toast.success("Registration successful! Please check your email to confirm your account first.", {
           duration: 6000,
         });
         navigate("/login");
