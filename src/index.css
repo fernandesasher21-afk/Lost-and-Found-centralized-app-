@@ -239,3 +239,13 @@
 .animate-vibrate {
   animation: vibrate 0.2s linear infinite;
 }
+@keyframes marquee-seamless {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee-seamless {
+  display: flex;
+  width: max-content;
+  animation: marquee-seamless 25s linear infinite;
+}

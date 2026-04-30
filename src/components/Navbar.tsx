@@ -48,6 +48,15 @@ const Navbar = () => {
               <span className="font-display text-lg font-bold gradient-text">UniFound</span>
             </Link>
 
+            {/* Scrolling Marquee */}
+           <div className="flex-1 mx-8 overflow-hidden hidden lg:block pointer-events-none select-none">
+  <div className="animate-marquee-seamless whitespace-nowrap text-lg font-display font-bold text-red-500"
+     style={{ animationDuration: "8s" }}>
+    <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+    <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+  </div>
+</div>
+
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1">
               {navLinks.map((link) => (
