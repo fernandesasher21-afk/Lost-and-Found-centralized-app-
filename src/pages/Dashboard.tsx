@@ -25,59 +25,86 @@ const statusColors: Record<string, string> = {
 };
 
 // Text-based matching for items without embeddings
+// Text-based matching for items without embeddings
 function calculateTextMatch(lostItem: any, foundItem: any) {
   let score = 0;
+  let total = 0;
   const reasons: string[] = [];
 
-  // Category match (weight: 0.25)
-  if (lostItem.category && foundItem.category && lostItem.category.toLowerCase() === foundItem.category.toLowerCase()) {
-    score += 0.25;
-    reasons.push("Category match");
+  // Normalize Category & Subcategory
+  let lCat = (lostItem.category || "").toLowerCase().trim();
+  let lSub = (lostItem.subcategory || "").toLowerCase().trim();
+  if (lCat.includes(" - ")) {
+    const [c, s] = lCat.split(" - ");
+    lCat = c.trim();
+    if (!lSub) lSub = s.trim();
   }
 
-  // Subcategory match (weight: 0.20)
-  if (lostItem.subcategory && foundItem.subcategory && lostItem.subcategory.toLowerCase() === foundItem.subcategory.toLowerCase()) {
-    score += 0.20;
-    reasons.push("Subcategory match");
-  }
+  const fCat = (foundItem.category || "").toLowerCase().trim();
+  const fSub = (foundItem.subcategory || "").toLowerCase().trim();
 
-  // Location match (weight: 0.15)
-  if (lostItem.location && foundItem.location) {
-    const ll = lostItem.location.toLowerCase();
-    const fl = foundItem.location.toLowerCase();
-    if (ll === fl) { score += 0.15; reasons.push("Same location"); }
-    else if (ll.includes(fl) || fl.includes(ll)) { score += 0.10; reasons.push("Similar location"); }
-  }
-
-  // Description similarity (weight: 0.25)
-  if (lostItem.description && foundItem.description) {
-    const lostWords = new Set(lostItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2));
-    const foundWords = new Set(foundItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2));
-    const intersection = [...lostWords].filter(w => foundWords.has(w));
-    const union = new Set([...lostWords, ...foundWords]);
-    if (union.size > 0) {
-      const similarity = intersection.length / union.size;
-      score += 0.25 * similarity;
-      if (similarity > 0.2) reasons.push("Description match");
+  // 1. Category (Critical)
+  total += 35;
+  if (lCat && fCat) {
+    if (lCat === fCat || lCat.includes(fCat) || fCat.includes(lCat)) {
+      score += 35;
+      reasons.push("Category match");
+    } else {
+      return { score: 0, reasons: ["Category mismatch"] };
     }
   }
 
-  // Name similarity (weight: 0.05)
-  if (lostItem.name && foundItem.name && lostItem.name.toLowerCase().includes(foundItem.name.toLowerCase())) {
-    score += 0.05;
-    reasons.push("Name match");
+  // 2. Subcategory
+  if (lSub || fSub) {
+    if (fSub) {
+      total += 20;
+      if (lSub === fSub || lSub.includes(fSub) || fSub.includes(lSub)) {
+        score += 20;
+        reasons.push("Subcategory match");
+      }
+    } else if (lSub && (foundItem.description?.toLowerCase().includes(lSub) || foundItem.name?.toLowerCase().includes(lSub))) {
+      score += 15;
+      total += 15;
+      reasons.push("Subcategory match in description");
+    }
   }
 
-  // Date proximity (weight: 0.10)
+  // 3. Location
+  if (lostItem.location || foundItem.location) {
+    total += 15;
+    if (lostItem.location && foundItem.location) {
+      const ll = lostItem.location.toLowerCase();
+      const fl = foundItem.location.toLowerCase();
+      if (ll === fl) { score += 15; reasons.push("Exact location match"); }
+      else if (ll.includes(fl) || fl.includes(ll)) { score += 10; reasons.push("Similar location"); }
+    }
+  }
+
+  // 4. Name
+  if (lostItem.name || foundItem.name) {
+    if (foundItem.name) {
+      total += 15;
+      if (lostItem.name && (lostItem.name.toLowerCase().includes(foundItem.name.toLowerCase()) || foundItem.name.toLowerCase().includes(lostItem.name.toLowerCase()))) {
+        score += 15;
+        reasons.push("Name match");
+      }
+    } else if (lostItem.name && foundItem.description?.toLowerCase().includes(lostItem.name.toLowerCase())) {
+      score += 10;
+      total += 10;
+      reasons.push("Name match in description");
+    }
+  }
+
+  // 5. Date
   if (lostItem.date_lost && foundItem.date_found) {
+    total += 10;
     const diff = Math.abs(new Date(lostItem.date_lost).getTime() - new Date(foundItem.date_found).getTime()) / (1000 * 60 * 60 * 24);
-    if (diff <= 1) { score += 0.10; reasons.push("Same day"); }
-    else if (diff <= 3) { score += 0.07; reasons.push("Within 3 days"); }
-    else if (diff <= 7) { score += 0.04; reasons.push("Within a week"); }
-    else if (diff <= 15) { score += 0.02; reasons.push("Within 15 days"); }
+    if (diff <= 1) { score += 10; reasons.push("Same day"); }
+    else if (diff <= 3) { score += 7; reasons.push("Within 3 days"); }
+    else if (diff <= 7) { score += 4; reasons.push("Within a week"); }
   }
 
-  return { score, reasons };
+  return { score: total > 0 ? score / total : 0, reasons };
 }
 
 const Dashboard = () => {

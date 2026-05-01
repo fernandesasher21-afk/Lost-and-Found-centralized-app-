@@ -29,41 +29,80 @@ const subcategoryMap: Record<string, string[]> = {
 const colorOptions = ["Black", "White", "Red", "Blue", "Green", "Yellow", "Brown", "Grey", "Pink", "Orange", "Purple", "Gold", "Silver", "Multi-color", "Other"];
 
 // Text-based matching for auto-verification
+// Text-based matching for auto-verification
 function calculateTextMatchScore(lostItem: any, foundItem: any): number {
   let score = 0;
-  // Category match (30%)
-  if (lostItem.category && foundItem.category && lostItem.category.toLowerCase() === foundItem.category.toLowerCase()) score += 0.30;
+  let total = 0;
   
-  // Subcategory match (25%)
-  if (lostItem.subcategory && foundItem.subcategory && lostItem.subcategory.toLowerCase() === foundItem.subcategory.toLowerCase()) score += 0.25;
-  
-  // Location match (25%)
-  if (lostItem.location && foundItem.location) {
-    const ll = lostItem.location.toLowerCase(), fl = foundItem.location.toLowerCase();
-    if (ll === fl) score += 0.25;
-    else if (ll.includes(fl) || fl.includes(ll)) score += 0.15;
+  // Normalize Category & Subcategory
+  let lCat = (lostItem.category || "").toLowerCase().trim();
+  let lSub = (lostItem.subcategory || "").toLowerCase().trim();
+  if (lCat.includes(" - ")) {
+    const [c, s] = lCat.split(" - ");
+    lCat = c.trim();
+    if (!lSub) lSub = s.trim();
   }
-  
-  // Description match (10%) - Reduced weight
-  if (lostItem.description && foundItem.description) {
-    const lw = new Set(lostItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2));
-    const fw = new Set(foundItem.description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2));
-    const inter = [...lw].filter(w => fw.has(w));
-    const union = new Set([...lw, ...fw]);
-    if (union.size > 0) score += 0.10 * (inter.length / union.size);
+
+  const fCat = (foundItem.category || "").toLowerCase().trim();
+  const fSub = (foundItem.subcategory || "").toLowerCase().trim();
+
+  // 1. Category (Mandatory)
+  total += 35;
+  if (lCat && fCat) {
+    if (lCat === fCat || lCat.includes(fCat) || fCat.includes(lCat)) {
+      score += 35;
+    } else {
+      return 0; // Hard mismatch
+    }
   }
-  
-  // Name match (5%)
-  if (lostItem.name && foundItem.name && (lostItem.name.toLowerCase().includes(foundItem.name.toLowerCase()) || foundItem.name.toLowerCase().includes(lostItem.name.toLowerCase()))) score += 0.05;
-  
-  // Date match (5%)
+
+  // 2. Subcategory
+  if (lSub || fSub) {
+    if (fSub) {
+      total += 20;
+      if (lSub === fSub || lSub.includes(fSub) || fSub.includes(lSub)) score += 20;
+    } else if (lSub && (foundItem.description?.toLowerCase().includes(lSub) || foundItem.name?.toLowerCase().includes(lSub))) {
+      score += 15;
+      total += 15;
+    }
+  }
+
+  // 3. Location
+  if (lostItem.location || foundItem.location) {
+    total += 15;
+    if (lostItem.location && foundItem.location) {
+      const ll = lostItem.location.toLowerCase(), fl = foundItem.location.toLowerCase();
+      if (ll === fl) score += 15;
+      else if (ll.includes(fl) || fl.includes(ll)) score += 10;
+    }
+  }
+
+  // 4. Name
+  if (lostItem.name || foundItem.name) {
+    if (foundItem.name) {
+      total += 15;
+      if (lostItem.name && (lostItem.name.toLowerCase().includes(foundItem.name.toLowerCase()) || foundItem.name.toLowerCase().includes(lostItem.name.toLowerCase()))) {
+        score += 15;
+      }
+    } else if (lostItem.name && foundItem.description?.toLowerCase().includes(lostItem.name.toLowerCase())) {
+      score += 10;
+      total += 10;
+    }
+  }
+
+  // 5. Date
   if (lostItem.date_lost && foundItem.date_found) {
-    const diff = Math.abs(new Date(lostItem.date_lost).getTime() - new Date(foundItem.date_found).getTime()) / (1000 * 60 * 60 * 24);
-    if (diff <= 1) score += 0.05;
-    else if (diff <= 3) score += 0.03;
-    else if (diff <= 7) score += 0.01;
+    total += 5;
+    const lDate = new Date(lostItem.date_lost);
+    const fDate = new Date(foundItem.date_found);
+    if (!isNaN(lDate.getTime()) && !isNaN(fDate.getTime())) {
+      const diff = Math.abs(fDate.getTime() - lDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (diff <= 1) score += 5;
+      else if (diff <= 3) score += 2;
+    }
   }
-  return score;
+
+  return total > 0 ? score / total : 0;
 }
 
 const statusColors: Record<string, string> = {

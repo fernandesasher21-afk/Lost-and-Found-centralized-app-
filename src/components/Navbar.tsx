@@ -53,6 +53,14 @@ const Navbar = () => {
               <div className="animate-marquee-seamless whitespace-nowrap text-base sm:text-lg font-display font-bold text-red-500">
                 <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
                 <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
+                <span className="pr-20">ST. Francis Institute of Technology (Borivali)</span>
               </div>
             </div>
 

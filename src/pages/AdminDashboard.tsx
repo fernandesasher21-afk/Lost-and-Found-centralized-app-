@@ -160,106 +160,132 @@ function calculateMatch(lost: LostItem, found: FoundItem): MatchResult {
   const lostFields = parseDescriptionFields(lost.description);
   const foundFields = parseDescriptionFields(found.description);
 
-  let lostCat = (lost.category || lostFields["category"] || "").toLowerCase();
-  let lostSubcat = (lost.subcategory || lostFields["subcategory"] || "").toLowerCase();
+  // Normalize Category & Subcategory
+  let lostCat = (lost.category || lostFields["category"] || "").toLowerCase().trim();
+  let lostSubcat = (lost.subcategory || lostFields["subcategory"] || "").toLowerCase().trim();
   
+  // Handle combined "Category - Subcategory" strings
   if (lostCat.includes(" - ")) {
     const [cat, sub] = lostCat.split(" - ");
     lostCat = cat.trim();
-    lostSubcat = sub.trim();
+    if (!lostSubcat) lostSubcat = sub.trim();
   }
 
-  const foundCat = (found.category || "").toLowerCase();
-  const foundSubcat = (found.subcategory || "").toLowerCase();
+  const foundCat = (found.category || foundFields["category"] || "").toLowerCase().trim();
+  const foundSubcat = (found.subcategory || foundFields["subcategory"] || "").toLowerCase().trim();
 
-  total += 30;
+  // 1. Category Match (CRITICAL: 35 points)
+  total += 35;
   if (lostCat && foundCat) {
-    if (lostCat === foundCat) {
-      score += 30;
+    if (lostCat === foundCat || lostCat.includes(foundCat) || foundCat.includes(lostCat)) {
+      score += 35;
       reasons.push("Category match");
     } else {
+      // Hard mismatch on category usually means it's not the item
       return { lostItem: lost, similarity: 0, reasons: ["Category mismatch"] };
     }
   }
 
+  // 2. Subcategory Match (20 points)
+  // Only add to total if either has a subcategory
   if (lostSubcat || foundSubcat) {
-    total += 20;
-    if (lostSubcat === foundSubcat) {
-      score += 20;
-      reasons.push("Subcategory match");
-    } else if (lostSubcat && foundSubcat) {
-      score -= 25;
-      reasons.push("Identity mismatch");
-    }
-  }
-
-  const lostName = (lost.name || lostFields["name"] || "").toLowerCase();
-  const foundName = (found.name || "").toLowerCase();
-  
-  if (lostName || foundName) {
-    total += 25;
-    if (lostName && foundName) {
-      if (lostName === foundName || foundName.includes(lostName) || lostName.includes(foundName)) {
-        score += 25;
-        reasons.push("Name match");
-      } else {
-        const lostWords = lostName.split(/\s+/).filter(w => w.length > 2);
-        const foundWords = foundName.split(/\s+/).filter(w => w.length > 2);
-        const shared = lostWords.filter(w => foundWords.some(fw => fw.includes(w) || w.includes(fw)));
-        
-        if (shared.length > 0) {
-          score += 15;
-          reasons.push("Partial name match");
-        } else {
-          score -= 30;
-          reasons.push("Different items");
-        }
+    // If found has it, it's a specific item, so it's a mandatory part of the identity
+    if (foundSubcat) {
+      total += 20;
+      if (lostSubcat === foundSubcat || lostSubcat.includes(foundSubcat) || foundSubcat.includes(lostSubcat)) {
+        score += 20;
+        reasons.push("Subcategory match");
+      }
+    } else {
+      // If found doesn't have it but lost does, it's a "bonus" match if we can find it in description
+      // But we don't penalize the total if found record is less specific
+      if (lostSubcat && (found.description?.toLowerCase().includes(lostSubcat) || found.name?.toLowerCase().includes(lostSubcat))) {
+        score += 15;
+        total += 15;
+        reasons.push("Subcategory found in description");
       }
     }
   }
 
-  let lostLoc = (lost.location || lostFields["location"] || "").toLowerCase();
-  if (lostLoc) {
+  // 3. Location Match (15 points)
+  const lostLoc = (lost.location || lostFields["location"] || "").toLowerCase().trim();
+  const foundLoc = (found.location || foundFields["location"] || "").toLowerCase().trim();
+  if (lostLoc || foundLoc) {
     total += 15;
-    const fl = (found.location || "").toLowerCase();
-    if (lostLoc === fl) {
-      score += 15;
-      reasons.push("Location identical");
-    } else if (fl.includes(lostLoc) || lostLoc.includes(fl)) {
+    if (lostLoc && foundLoc) {
+      if (lostLoc === foundLoc) {
+        score += 15;
+        reasons.push("Identical location");
+      } else if (foundLoc.includes(lostLoc) || lostLoc.includes(foundLoc)) {
+        score += 10;
+        reasons.push("Related location");
+      }
+    }
+  }
+
+  // 4. Name Match (15 points)
+  const lostName = (lost.name || lostFields["name"] || "").toLowerCase().trim();
+  const foundName = (found.name || foundFields["name"] || "").toLowerCase().trim();
+  if (lostName || foundName) {
+    if (foundName) {
+      total += 15;
+      if (lostName && (lostName === foundName || foundName.includes(lostName) || lostName.includes(foundName))) {
+        score += 15;
+        reasons.push("Name match");
+      }
+    } else if (lostName && found.description?.toLowerCase().includes(lostName)) {
       score += 10;
-      reasons.push("Related location");
+      total += 10;
+      reasons.push("Item name mentioned in found description");
     }
   }
 
-  const lostColor = (lostFields["color"] || "").toLowerCase();
-  const foundColor = (foundFields["color"] || "").toLowerCase();
-  if (lostColor) {
-    total += 4;
-    if (foundColor && lostColor === foundColor) {
-      score += 4;
-      reasons.push("Color match");
+  // 5. Color Match (5 points)
+  const lostColor = (lostFields["color"] || "").toLowerCase().trim();
+  const foundColor = (foundFields["color"] || "").toLowerCase().trim();
+  if (lostColor || foundColor) {
+    if (foundColor) {
+      total += 5;
+      if (lostColor === foundColor) {
+        score += 5;
+        reasons.push("Color match");
+      }
     }
   }
 
-  const lostBrand = (lostFields["brand"] || "").toLowerCase();
-  const foundBrand = (foundFields["brand"] || "").toLowerCase();
-  if (lostBrand) {
-    total += 4;
-    if (foundBrand && (lostBrand === foundBrand || lostBrand.includes(foundBrand) || foundBrand.includes(lostBrand))) {
-      score += 4;
-      reasons.push("Brand identity");
+  // 6. Brand Match (5 points)
+  const lostBrand = (lostFields["brand"] || "").toLowerCase().trim();
+  const foundBrand = (foundFields["brand"] || "").toLowerCase().trim();
+  if (lostBrand || foundBrand) {
+    if (foundBrand) {
+      total += 5;
+      if (lostBrand === foundBrand || (lostBrand && foundBrand.includes(lostBrand)) || (foundBrand && lostBrand.includes(foundBrand))) {
+        score += 5;
+        reasons.push("Brand match");
+      }
     }
   }
 
-  let lostDate = (lost.date_lost || lostFields["date lost"] || "").toLowerCase();
-  if (lostDate && found.date_found) {
+  // 7. Date Match (5 points)
+  const lostDate = (lost.date_lost || lostFields["date lost"] || "").toLowerCase().trim();
+  const foundDate = (found.date_found || foundFields["date found"] || "").toLowerCase().trim();
+  if (lostDate && foundDate) {
     total += 5;
-    const diffDays = Math.abs(new Date(found.date_found).getTime() - new Date(lostDate).getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays <= 1) { score += 5; reasons.push("Same day"); }
-    else if (diffDays <= 3) { score += 3; reasons.push("Close date"); }
+    const lDate = new Date(lostDate);
+    const fDate = new Date(foundDate);
+    if (!isNaN(lDate.getTime()) && !isNaN(fDate.getTime())) {
+      const diffDays = Math.abs(fDate.getTime() - lDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (diffDays <= 1) {
+        score += 5;
+        reasons.push("Date match");
+      } else if (diffDays <= 3) {
+        score += 2;
+        reasons.push("Close date");
+      }
+    }
   }
 
-  const percentage = total > 0 ? Math.max(0, Math.round((score / total) * 100)) : 0;
+  const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
   return { lostItem: lost, similarity: percentage / 100, reasons };
 }
 
@@ -828,13 +854,14 @@ const AdminDashboard = () => {
                                         <div className="bg-white/5 rounded-2xl p-5 border border-white/5 space-y-4">
                                           {claimFoundItem && (() => {
                                             const foundF = parseDescriptionFields(claimFoundItem.description);
-                                            const fields = [
-                                              { label: "Category", val: claimFoundItem.category },
-                                              { label: "Location", val: claimFoundItem.location },
-                                              { label: "Date", val: claimFoundItem.date_found },
-                                              { label: "Color", val: foundF["color"] },
-                                              { label: "Brand", val: foundF["brand"] },
-                                            ];
+                                              const fields = [
+                                                { label: "Category", val: claimFoundItem.category },
+                                                { label: "Subcategory", val: claimFoundItem.subcategory || foundF["subcategory"] },
+                                                { label: "Location", val: claimFoundItem.location },
+                                                { label: "Date", val: claimFoundItem.date_found },
+                                                { label: "Color", val: foundF["color"] },
+                                                { label: "Brand", val: foundF["brand"] },
+                                              ];
                                             return (
                                               <div className="space-y-4">
                                                 {fields.map(f => (
