@@ -247,5 +247,5 @@
 .animate-marquee-seamless {
   display: flex;
   width: max-content;
-  animation: marquee-seamless 25s linear infinite;
+  animation: marquee-seamless 12s linear infinite;
 }

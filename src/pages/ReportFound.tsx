@@ -114,30 +114,35 @@ const ReportFound = () => {
 
       // Generate embedding via edge function
       if (imagePreview && insertedItem) {
-        toast.info("Generating AI embedding for your item...");
-        try {
-          const response = await supabase.functions.invoke("process-item-image", {
-            body: {
-              image_base64: imagePreview,
-              item_type: "found",
-              item_id: insertedItem.found_id,
-              category: finalCategory,
-              subcategory: finalSubcategory || null,
-              location,
-              date_value: dateFound,
-              original_description: description,
-            },
-          });
-          if (response.error) {
-            console.error("Embedding generation failed:", response.error);
-            toast.warning("Item saved but AI embedding could not be generated");
-          } else {
-            toast.success("AI embedding generated successfully!");
-          }
-        } catch (embError) {
-          console.error("Edge function call failed:", embError);
-          toast.warning("Item saved but AI processing failed");
-        }
+        const embeddingPromise = supabase.functions.invoke("process-item-image", {
+          body: {
+            image_base64: imagePreview,
+            item_type: "found",
+            item_id: insertedItem.found_id,
+            category: finalCategory,
+            subcategory: finalSubcategory || null,
+            location,
+            date_value: dateFound,
+            original_description: description,
+          },
+        });
+
+        toast.promise(embeddingPromise, {
+          loading: "Generating AI embedding for your item...",
+          success: (res) => {
+            if (res.error) {
+              console.error("Embedding generation failed:", res.error);
+              return "Item saved but AI embedding could not be generated";
+            }
+            return "AI embedding generated successfully!";
+          },
+          error: (err) => {
+            console.error("Edge function call failed:", err);
+            return "Item saved but AI processing failed";
+          },
+        });
+
+        await embeddingPromise;
       }
 
       toast.success("Found item reported successfully!");

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Package, ArrowRight, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,49 @@ const ReportLost = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (editId) {
+      const fetchItem = async () => {
+        const { data, error } = await supabase
+          .from("Lost_Item")
+          .select("*")
+          .eq("lost_id", editId)
+          .single();
+        
+        if (data && !error) {
+          setItemName(data.name || "");
+          if (categories.includes(data.category)) {
+            setCategory(data.category);
+          } else {
+            setCategory("Other");
+            setCustomCategory(data.category || "");
+          }
+          
+          setSubcategory(data.subcategory || "");
+          setLocation(data.location || "");
+          setDateLost(data.date_lost || "");
+          setImagePreview(data.image_path || null);
+          
+          // Parse complex description if it exists
+          if (data.description) {
+            const parts = data.description.split(" | ");
+            setDescription(parts[0] || "");
+            
+            parts.forEach(part => {
+              if (part.startsWith("Color: ")) setColor(part.replace("Color: ", ""));
+              if (part.startsWith("Brand: ")) setBrand(part.replace("Brand: ", ""));
+              if (part.startsWith("Distinguishing marks: ")) setDistinguishingMarks(part.replace("Distinguishing marks: ", ""));
+            });
+          }
+        }
+      };
+      fetchItem();
+    }
+  }, [editId]);
 
   const handleFileChange = (file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please upload an image file"); return; }
@@ -99,48 +141,67 @@ const ReportLost = () => {
       if (distinguishingMarks) detailParts.push(`Distinguishing marks: ${distinguishingMarks}`);
       const fullDescription = detailParts.join(" | ");
 
-      const { data: insertedItem, error } = await supabase.from("Lost_Item").insert({
-        name: itemName,
-        category: finalCategory,
-        subcategory: finalSubcategory || null,
-        location,
-        date_lost: dateLost,
-        description: fullDescription,
-        status: "Lost",
-        user_id: user.id,
-        image_path: storedImagePath,
-      }).select("lost_id").single();
+      const { data: updatedOrInsertedItem, error } = editId 
+        ? await supabase.from("Lost_Item").update({
+            name: itemName,
+            category: finalCategory,
+            subcategory: finalSubcategory || null,
+            location,
+            date_lost: dateLost,
+            description: fullDescription,
+            image_path: storedImagePath || imagePreview,
+          }).eq("lost_id", editId).select("lost_id").single()
+        : await supabase.from("Lost_Item").insert({
+            name: itemName,
+            category: finalCategory,
+            subcategory: finalSubcategory || null,
+            location,
+            date_lost: dateLost,
+            description: fullDescription,
+            status: "Lost",
+            user_id: user.id,
+            image_path: storedImagePath,
+          }).select("lost_id").single();
+
       if (error) throw error;
+      const finalItem = updatedOrInsertedItem;
 
       // If image uploaded, generate embedding via edge function
-      if (imagePreview && insertedItem) {
-        toast.info("Generating AI embedding for your item...");
-        try {
-          const response = await supabase.functions.invoke("process-item-image", {
-            body: {
-              image_base64: imagePreview,
-              item_type: "lost",
-              item_id: insertedItem.lost_id,
-              category: finalCategory,
-              subcategory: finalSubcategory || null,
-              location,
-              date_value: dateLost,
-              original_description: description,
-            },
-          });
-          if (response.error) {
-            console.error("Embedding generation failed:", response.error);
-            toast.warning("Item saved but AI embedding could not be generated");
-          } else {
-            toast.success("AI embedding generated successfully!");
-          }
-        } catch (embError) {
-          console.error("Edge function call failed:", embError);
-          toast.warning("Item saved but AI processing failed");
-        }
+      if (imagePreview && finalItem && !editId) {
+        const embeddingPromise = supabase.functions.invoke("process-item-image", {
+          body: {
+            image_base64: imagePreview,
+            item_type: "lost",
+            item_id: finalItem.lost_id,
+            category: finalCategory,
+            subcategory: finalSubcategory || null,
+            location,
+            date_value: dateLost,
+            original_description: description,
+          },
+        });
+
+        toast.promise(embeddingPromise, {
+          loading: "Generating AI embedding for your item...",
+          success: (res) => {
+            if (res.error) {
+              console.error("Embedding generation failed:", res.error);
+              return "Item saved but AI embedding could not be generated";
+            }
+            return "AI embedding generated successfully!";
+          },
+          error: (err) => {
+            console.error("Edge function call failed:", err);
+            return "Item saved but AI processing failed";
+          },
+        });
+
+        // We don't necessarily need to wait for it to finish before navigating, 
+        // but since the user is seeing the toast, let's wait to ensure a smooth transition.
+        await embeddingPromise;
       }
 
-      toast.success("Lost item reported successfully!");
+      toast.success(editId ? "Report updated successfully!" : "Lost item reported successfully!");
       navigate("/dashboard");
     } catch (error: any) {
       toast.error(getUserFriendlyError(error, "report"));
@@ -159,8 +220,12 @@ const ReportLost = () => {
           <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", delay: 0.2, stiffness: 200 }} className="w-[72px] h-[72px] rounded-2xl bg-destructive/10 flex items-center justify-center mx-auto mb-5">
             <Package className="w-9 h-9 text-destructive" />
           </motion.div>
-          <h1 className="text-4xl font-display font-bold text-foreground">Report Lost Item</h1>
-          <p className="text-muted-foreground mt-2 text-lg">Provide detailed information to help us find your item</p>
+          <h1 className="text-4xl font-display font-bold text-foreground">
+            {editId ? "Update Lost Item" : "Report Lost Item"}
+          </h1>
+          <p className="text-muted-foreground mt-2 text-lg">
+            {editId ? "Keep your item details accurate for better matching" : "Provide detailed information to help us find your item"}
+          </p>
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-strong rounded-3xl p-8 md:p-10">
@@ -266,7 +331,7 @@ const ReportLost = () => {
 
             <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
               <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-13 rounded-xl text-base font-semibold glow gap-2">
-                {loading ? "Submitting..." : <>Submit Report <ArrowRight className="w-4 h-4" /></>}
+                {loading ? (editId ? "Updating..." : "Submitting...") : <>{editId ? "Update Report" : "Submit Report"} <ArrowRight className="w-4 h-4" /></>}
               </Button>
             </motion.div>
           </form>
