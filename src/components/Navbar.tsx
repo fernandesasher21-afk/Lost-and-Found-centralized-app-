@@ -101,8 +101,12 @@ const Navbar = () => {
                   </Link>
                   <Link to={isStaffOrAdmin ? "/admin" : "/dashboard"}>
                     <Button variant="ghost" size="sm" className="gap-2 rounded-xl h-9 text-sm">
-                      <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center">
-                        <User className="w-3.5 h-3.5 text-primary" />
+                      <div className="w-6 h-6 rounded-full overflow-hidden bg-primary/15 flex items-center justify-center border border-primary/10">
+                        {user.avatarUrl ? (
+                          <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-3.5 h-3.5 text-primary" />
+                        )}
                       </div>
                       {user.name}
                     </Button>
@@ -193,7 +197,16 @@ const Navbar = () => {
                   <div className="pt-2 mt-2 border-t border-border/30 space-y-2">
                     <div className="flex gap-2">
                       <Link to={isStaffOrAdmin ? "/admin" : "/dashboard"} className="flex-1" onClick={() => setMobileOpen(false)}>
-                        <Button variant="ghost" className="w-full gap-2 rounded-xl h-10"><User className="w-4 h-4" />{user.name}</Button>
+                        <Button variant="ghost" className="w-full gap-2 rounded-xl h-10 justify-start px-3">
+                          <div className="w-6 h-6 rounded-full overflow-hidden bg-primary/15 flex items-center justify-center border border-primary/10">
+                            {user.avatarUrl ? (
+                              <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <User className="w-4 h-4 text-primary" />
+                            )}
+                          </div>
+                          {user.name}
+                        </Button>
                       </Link>
                       <Link to="/edit-profile" onClick={() => setMobileOpen(false)}>
                         <Button variant="ghost" size="icon" className="rounded-xl h-10"><Settings className="w-4 h-4" /></Button>

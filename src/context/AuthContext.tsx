@@ -7,6 +7,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: string;
+  avatarUrl?: string | null;
 }
 
 interface AuthContextType {
@@ -15,6 +16,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string, role?: string, pid?: string) => Promise<{ user: User | null; session: any } | { user: null; session: null }>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   isStaffOrAdmin: boolean;
 }
 
@@ -46,6 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         name: data.name || supaUser.user_metadata?.name || supaUser.email?.split("@")[0] || "",
         email: data.email,
         role: effectiveRole,
+        avatarUrl: data.avatar_url,
       });
     }
   };
@@ -110,10 +113,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await fetchProfile(session.user);
+    }
+  };
   const isStaffOrAdmin = user?.role === "admin" || user?.role === "moderator";
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, isStaffOrAdmin }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, refreshUser, isStaffOrAdmin }}>
       {children}
     </AuthContext.Provider>
   );

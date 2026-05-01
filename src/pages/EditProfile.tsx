@@ -13,7 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { getUserFriendlyError } from "@/lib/errorMessages";
 
 const EditProfile = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +81,7 @@ const EditProfile = () => {
         .update({ avatar_url: urlData.publicUrl } as any)
         .eq("id", user.id);
 
+      await refreshUser();
       toast.success("Profile photo updated!");
     } catch (err: any) {
       toast.error(getUserFriendlyError(err, "upload"));
@@ -108,6 +109,7 @@ const EditProfile = () => {
         .eq("id", user.id);
 
       if (error) throw error;
+      await refreshUser();
       toast.success("Profile updated successfully!");
       navigate(-1);
     } catch (err: any) {
