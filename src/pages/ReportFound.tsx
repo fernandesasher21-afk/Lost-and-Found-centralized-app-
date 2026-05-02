@@ -107,7 +107,6 @@ const ReportFound = () => {
         date_found: dateFound,
         description: fullDescription,
         status: "Found",
-        user_id: user.id,
         image_path: storedImagePath,
       }).select("found_id").single();
       if (error) throw error;
